@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "sourceMap": true,
+    "outFile": "index.js",
+    "target": "es6"
+  },
+  "files": [
+    "src/utils",
+    "src/index.ts"
+  ],
+  "include": [
+    "./node_modules/web3-typescript-typings/index.d.ts"
+  ]
+}

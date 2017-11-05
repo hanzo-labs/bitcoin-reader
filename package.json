@@ -1,0 +1,36 @@
+{
+  "name": "bitcoin-reader",
+  "version": "1.0.0",
+  "private": "true",
+  "description": "bitcoin reader for hanzo platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "sake start",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": "8.x"
+  },
+  "devDependencies": {
+    "@types/bloomfilter": "0.1.1",
+    "@types/google-cloud__datastore": "1.1.0",
+    "@types/moment": "2.13.0",
+    "@types/moment-timezone": "0.5.0"
+  },
+  "dependencies": {
+    "@google-cloud/datastore": "1.1.0",
+    "axios": "0.16.2",
+    "bloomfilter": "0.0.16",
+    "fs": "0.0.1-security",
+    "moment-timezone": "0.5.13",
+    "os": "0.1.1",
+    "sake-bundle": "0.6.1",
+    "sake-cli": "0.5.22",
+    "sake-core": "1.5.1",
+    "sake-outdated": "0.1.28",
+    "sake-version": "0.1.19",
+    "typescript": "2.5.3"
+  }
+}

@@ -1,0 +1,7 @@
+.sake/
+node_modules/
+lib/
+.geth/
+.ethereum/
+geth*.tar.gz
+.node*

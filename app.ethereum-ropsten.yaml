@@ -1,0 +1,10 @@
+runtime: nodejs
+env:     flex
+service: ethereum-ropsten-reader
+skip_files:
+  - .geth/*
+  - .ethereum/*
+manual_scaling:
+  instances: 1
+env_variables:
+  ENVIRONMENT: test
