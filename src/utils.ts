@@ -13,8 +13,58 @@ var rfc3339 = 'YYYY-MM-DDTHH:mm:ssZ'
 var blockAddressQueriedAt = null
 
 // Hanzo Ethereum Webhook
-var ethereumWebhook = 'https://api.hanzo.io/ethereum/webhook'
-var ethereumWebhookPassword = '3NRD2H3EbnrX4fFPBvHqUxsQjMMdVpbGXRn2jFggnq66bEEczjF3GK4r66JX3veY6WJUrxCSpB2AKsNRBHuDTHZkXBrY258tCpa4xMJPnyrCh5dZaPD5TvCC8BSHgEeMwkaN6Vgcme783fFBeS9eY88NpAgH84XbLL5W5AXahLa2ZSJy4VT8nkRVpSNPE32KGE4Jp3uhuHPUd7eKdYjrX9x8aukgQKtuyCNKdxhh4jw8ZzYZ2JUbgMmTtjduFswc'
+var bitcoinWebhook = 'https://api.hanzo.io/bitcoin/webhook'
+var bitcoinWebhookPassword = '3NRD2H3EbnrX4fFPBvHqUxsQjMMdVpbGXRn2jFggnq66bEEczjF3GK4r66JX3veY6WJUrxCSpB2AKsNRBHuDTHZkXBrY258tCpa4xMJPnyrCh5dZaPD5TvCC8BSHgEeMwkaN6Vgcme783fFBeS9eY88NpAgH84XbLL5W5AXahLa2ZSJy4VT8nkRVpSNPE32KGE4Jp3uhuHPUd7eKdYjrX9x8aukgQKtuyCNKdxhh4jw8ZzYZ2JUbgMmTtjduFswc'
+
+// Get random id
+function getRandomId() {
+  return parseInt(Math.random() * 100000);
+}
+
+// Bitcoin Client
+class BTCClient {
+  address: string
+  username: string
+  password: string
+
+  constructor(address: string, username: string, password: string) {
+    this.address  = address
+    this.username = username
+    this.password = password
+  }
+
+  rpc(...params: string[]) {
+    var method  = params.shift()
+    var auth    = new Buffer(this.username + ':' + this.password).toString('base64');
+    var id      = getRandomId()
+
+    var options = {
+      url: this.address,
+      method: 'post',
+      headers: {
+        Authorization:  'Basic ' + auth
+        // 'Content-Type': 'application/json',
+      },
+      data: {
+        jsonrpc: '2.0',
+        method:  method,
+        id:      id,
+        params:  params,
+      }
+    }
+
+    console.log(`RPC Request\n${JSON.stringify(options)}`)
+
+    return axios(options).then((res)=> {
+      console.log(`RPC Response ${res.data.result}`)
+      if (res.data.result) {
+        return res.data.result
+      }
+
+      throw new Error(res.data.error)
+    })
+  }
+}
 
 // This function updates a bloom filter with new addresses
 async function updateBloom(bloom, datastore, network) {
@@ -64,27 +114,25 @@ function saveReadingBlock(datastore, network, result) {
   var createdAt = moment().toDate()
 
   // Convert to the Go Compatible Datastore Representation
-  var id  = `${ network }/${ result.number }`
+  var id  = `${ network }/${ result.hash }`
   var data = {
     Id_: id,
 
-    EthereumBlockNumber:           result.number,
-    EthereumBlockHash:             result.hash,
-    EthereumBlockParentHash:       result.parentHash,
-    EthereumBlockNonce:            result.nonce,
-    EthereumBlockSha3Uncles:       result.sha3Uncles,
-    EthereumBlockLogsBloom:        result.logsBloom,
-    EthereumBlockTransactionsRoot: result.transactionsRoot,
-    EthereumBlockStateRoot:        result.stateRoot,
-    EthereumBlockMiner:            result.miner,
-    EthereumBlockDifficulty:       result.difficulty.toString(10),
-    EthereumBlockTotalDifficulty:  result.totalDifficulty.toString(10),
-    EthereumBlockExtraData:        result.extraData,
-    EthereumBlockSize:             result.size,
-    EthereumBlockGasLimit:         result.gasLimit,
-    EthereumBlockGasUsed:          result.gasUsed,
-    EthereumBlockTimeStamp:        result.timestamp,
-    EthereumBlockUncles:           toDatastoreArray(result.uncles, 'string'),
+	BitcoinBlockHeight:            result.height,
+	BitcoinBlockHash:              result.hash,
+	BitcoinBlockStrippedSize:      result.strippedsize,
+	BitcoinBlockSize:              result.size,
+	BitcoinBlockWeight:            result.weight,
+	BitcoinBlockVersion:           result.version,
+	BitcoinBlockVersionHex:        result.versionHex,
+	BitcoinBlockMerkleroot:        result.merkleroot,
+	BitcoinBlockTime:              result.time,
+	BitcoinBlockMedianTime:        result.mediantime,
+	BitcoinBlockNonce:             result.nonce,
+	BitcoinBlockBits:              result.bits,
+	BitcoinBlockDifficulty:        result.difficulty,
+	BitcoinBlockChainwork:         result.chainwork,
+	BitcoinBlockPreviousBlockHash: result.previousblockhash,
 
     Type:   network,
     // Disabled because we aren't running the pending/confirmed code for blocks
@@ -102,111 +150,28 @@ function saveReadingBlock(datastore, network, result) {
     key:  datastore.key(['block', id]),
     data: data,
   }).then((result) => {
-    console.log(`Reading Block #${ data.EthereumBlockNumber } Saved:\n`, JSON.stringify(result))
+    console.log(`Reading Block #${ data.BitcoinBlockHeight } Saved:\n`, JSON.stringify(result))
 
-    console.log(`Issuing New Block #${ data.EthereumBlockNumber } Webhook Event`)
-    return axios.post(ethereumWebhook, {
-      name:     'block.reading',
-      type:     network,
-      password: ethereumWebhookPassword,
+    // console.log(`Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event`)
+    // return axios.post(bitcoinWebhook, {
+    //   name:     'block.reading',
+    //   type:     network,
+    //   password: bitcoinWebhookPassword,
 
-      dataId:   data.Id_,
-      dataKind: 'block',
-      data:     data,
-    }).then((result) => {
-      console.log(`Successfully Issued New Block #${ data.EthereumBlockNumber } Webhook Event`)
-    }).catch((error) => {
-      console.log(`Error Issuing New Block #${ data.EthereumBlockNumber } Webhook Event:\n`, error)
-    })
+    //   dataId:   data.Id_,
+    //   dataKind: 'block',
+    //   data:     data,
+    // }).then((result) => {
+    //   console.log(`Successfully Issued New Block #${ data.BitcoinBlockHeight } Webhook Event`)
+    // }).catch((error) => {
+    //   console.log(`Error Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event:\n`, error)
+    // })
   }).catch((error) => {
-    console.log(`Error Saving New Block #${ data.EthereumBlockNumber }:\n`, error)
+    console.log(`Error Saving New Block #${ data.BitcoinBlockHeight }:\n`, error)
   })]
 }
 
-function updatePendingBlock(datastore, data) {
-  console.log(`Updating Reading Block #'${ data.Id_ }' To Pending Status`)
-
-  // Update the block status to pending
-  data.Status    = 'pending'
-  data.UpdatedAt = moment().toDate()
-
-  // Save the data to the key
-  return datastore.save({
-    key:  datastore.key(['block', data.Id_]),
-    data: data,
-  }).then((result)=> {
-    console.log(`Pending Block #${ data.EthereumBlockNumber } Updated:\n`, JSON.stringify(result))
-
-    console.log(`Issuing Pending Block #${ data.EthereumBlockNumber } Webhook Event`)
-    return axios.post(ethereumWebhook, {
-      name:     'block.pending',
-      type:     data.Type,
-      password: ethereumWebhookPassword,
-
-      dataId:   data.Id_,
-      dataKind: 'block',
-      data:     data,
-    }).then((result) => {
-      console.log(`Successfully Issued Pending Block #${ data.EthereumBlockNumber } Webhook Event`)
-    }).catch((error) => {
-      console.log(`Error Issuing Pending Block #${ data.EthereumBlockNumber } Webhook Event:\n`, error)
-    })
-  }).catch((error) =>{
-    console.log(`Error Updating Reading Block #${ data.EthereumBlockNumber }:\n`, error)
-  })
-}
-
-function getAndUpdateConfirmedBlock(datastore, network, number, confirmations) {
-  var id  = `${ network }/${ number }`
-  var key = datastore.key(['block', id])
-
-  console.log(`Fetching Pending Block #'${ number }'`)
-
-  // Get the pending block to confirm
-  return datastore.get(key).then((result) => {
-    var [data] = result
-
-    if (!data) {
-      console.log(`Pending Block #${ number } Not Found`)
-      return
-    }
-
-    data.Confirmations = confirmations
-    data.UpdatedAt     = moment().toDate()
-    data.Status        = 'confirmed'
-
-    console.log(`Updating Pending Block #${ number } To Confirmed Status`)
-
-    // Save the data to the key
-    return datastore.save({
-      key:  key,
-      data: data,
-    }).then((result)=> {
-      console.log(`Confirmed Block #${ data.EthereumBlockNumber } Updated:\n`, JSON.stringify(result))
-
-      console.log(`Issuing Confirmed Block #${ data.EthereumBlockNumber } Webhook Event`)
-      return axios.post(ethereumWebhook, {
-        name:     'block.confirmed',
-        type:     network,
-        password: ethereumWebhookPassword,
-
-        dataId:   data.Id_,
-        dataKind: 'block',
-        data:     data,
-      }).then((result) => {
-        console.log(`Successfully Issued Confirmed Block #${ data.EthereumBlockNumber } Webhook Event`)
-      }).catch((error) => {
-        console.log(`Error Issuing Confirmed Block #${ data.EthereumBlockNumber } Webhook Event:\n`, error)
-      })
-    }).catch((error) =>{
-      console.log(`Error Saving Confirmed Block #${ data.EthereumBlockNumber }:\n`, error)
-    })
-  }).catch((error)=>{
-    console.log(`Error Getting Pending Block #${ number }:\n`, error)
-  })
-}
-
-function savePendingBlockTransaction(datastore, transaction, network, address, usage) {
+function savePendingBlockTransaction(datastore, number, transaction, vin, vout, network, usage) {
   var query = datastore.createQuery('blockaddress').filter('Type', '=', network).filter('Address', '=', address)
 
   console.log(`Checking If Address ${ address } Is Being Watched`)
@@ -225,6 +190,19 @@ function savePendingBlockTransaction(datastore, transaction, network, address, u
     var id  = `${ network }/${address}/${ transaction.hash }`
     var data = {
       Id_: id,
+
+      BitcoinTransactionHeight        string                 `json:"bitcoinTransactionHeight"`
+      BitcoinTransactionHash          string                 `json:"bitcoinTransactionHash"`
+      BitcoinTransactionVersion       int64                  `json:"bitcoinTransactionVersion"`
+      BitcoinTransactionSize          int64                  `json:"bitcoinTransactionSize"`
+      BitcoinTransactionVSize         int64                  `json:"bitcoinTransactionVSize"`
+      BitcoinTransactionLocktime      int64                  `json:"bitcoinTransactionLocktime"`
+      BitcoinTransactionHex           string                 `json:"bitcoinTransactionHex"`
+      BitcoinTransactionBlockHash     string                 `json:"bitcoinTransactionBlockHash"`
+      BitcoinTransactionConfirmations int64                  `json:"bitcoinTransactionConfirmations"`
+      BitcoinTransactionTime          int64                  `json:"bitcoinTransactionTime"`
+      BitcoinTransactionBlockTime     int64                  `json:"bitcoinTransactionBlockTime"`
+      BitcoinTransactionType          BitcoinTransactionType `json:"bitcoinTransactionType"`
 
       EthereumTransactionHash:             transaction.hash,
       EthereumTransactionNonce:            transaction.nonce,
@@ -257,10 +235,10 @@ function savePendingBlockTransaction(datastore, transaction, network, address, u
       console.log(`Pending Block Transaction ${ transaction.hash } Saved:\n`, JSON.stringify(result))
 
       console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
-      return axios.post(ethereumWebhook, {
+      return axios.post(bitcoinWebhook, {
         name:     'blocktransaction.pending',
         type:     network,
-        password: ethereumWebhookPassword,
+        password: bitcoinWebhookPassword,
 
         dataId:   data.Id_,
         dataKind: 'blocktransaction',
@@ -330,10 +308,10 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
             console.log(`Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Saved:\n`, JSON.stringify(result))
 
             console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
-            return axios.post(ethereumWebhook, {
+            return axios.post(bitcoinWebhook, {
               name:     'blocktransaction.confirmed',
               type:     network,
-              password: ethereumWebhookPassword,
+              password: bitcoinWebhookPassword,
 
               dataId:   transaction.Id_,
               dataKind: 'blocktransaction',

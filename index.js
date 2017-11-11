@@ -16,8 +16,47 @@ var rfc3339 = 'YYYY-MM-DDTHH:mm:ssZ';
 // Stores the last time block addresses were queries for in updateBloom
 var blockAddressQueriedAt = null;
 // Hanzo Ethereum Webhook
-var ethereumWebhook = 'https://api.hanzo.io/ethereum/webhook';
-var ethereumWebhookPassword = '3NRD2H3EbnrX4fFPBvHqUxsQjMMdVpbGXRn2jFggnq66bEEczjF3GK4r66JX3veY6WJUrxCSpB2AKsNRBHuDTHZkXBrY258tCpa4xMJPnyrCh5dZaPD5TvCC8BSHgEeMwkaN6Vgcme783fFBeS9eY88NpAgH84XbLL5W5AXahLa2ZSJy4VT8nkRVpSNPE32KGE4Jp3uhuHPUd7eKdYjrX9x8aukgQKtuyCNKdxhh4jw8ZzYZ2JUbgMmTtjduFswc';
+var bitcoinWebhook = 'https://api.hanzo.io/bitcoin/webhook';
+var bitcoinWebhookPassword = '3NRD2H3EbnrX4fFPBvHqUxsQjMMdVpbGXRn2jFggnq66bEEczjF3GK4r66JX3veY6WJUrxCSpB2AKsNRBHuDTHZkXBrY258tCpa4xMJPnyrCh5dZaPD5TvCC8BSHgEeMwkaN6Vgcme783fFBeS9eY88NpAgH84XbLL5W5AXahLa2ZSJy4VT8nkRVpSNPE32KGE4Jp3uhuHPUd7eKdYjrX9x8aukgQKtuyCNKdxhh4jw8ZzYZ2JUbgMmTtjduFswc';
+// Get random id
+function getRandomId() {
+    return parseInt(Math.random() * 100000);
+}
+// Bitcoin Client
+class BTCClient {
+    constructor(address, username, password) {
+        this.address = address;
+        this.username = username;
+        this.password = password;
+    }
+    rpc(...params) {
+        var method = params.shift();
+        var auth = new Buffer(this.username + ':' + this.password).toString('base64');
+        var id = getRandomId();
+        var options = {
+            url: this.address,
+            method: 'post',
+            headers: {
+                Authorization: 'Basic ' + auth
+                // 'Content-Type': 'application/json',
+            },
+            data: {
+                jsonrpc: '2.0',
+                method: method,
+                id: id,
+                params: params,
+            }
+        };
+        console.log(`RPC Request\n${JSON.stringify(options)}`);
+        return axios(options).then((res) => {
+            console.log(`RPC Response ${res.data.result}`);
+            if (res.data.result) {
+                return res.data.result;
+            }
+            throw new Error(res.data.error);
+        });
+    }
+}
 // This function updates a bloom filter with new addresses
 function updateBloom(bloom, datastore, network) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -57,26 +96,24 @@ function toDatastoreArray(array, type) {
 function saveReadingBlock(datastore, network, result) {
     var createdAt = moment().toDate();
     // Convert to the Go Compatible Datastore Representation
-    var id = `${network}/${result.number}`;
+    var id = `${network}/${result.hash}`;
     var data = {
         Id_: id,
-        EthereumBlockNumber: result.number,
-        EthereumBlockHash: result.hash,
-        EthereumBlockParentHash: result.parentHash,
-        EthereumBlockNonce: result.nonce,
-        EthereumBlockSha3Uncles: result.sha3Uncles,
-        EthereumBlockLogsBloom: result.logsBloom,
-        EthereumBlockTransactionsRoot: result.transactionsRoot,
-        EthereumBlockStateRoot: result.stateRoot,
-        EthereumBlockMiner: result.miner,
-        EthereumBlockDifficulty: result.difficulty.toString(10),
-        EthereumBlockTotalDifficulty: result.totalDifficulty.toString(10),
-        EthereumBlockExtraData: result.extraData,
-        EthereumBlockSize: result.size,
-        EthereumBlockGasLimit: result.gasLimit,
-        EthereumBlockGasUsed: result.gasUsed,
-        EthereumBlockTimeStamp: result.timestamp,
-        EthereumBlockUncles: toDatastoreArray(result.uncles, 'string'),
+        BitcoinBlockHeight: result.height,
+        BitcoinBlockHash: result.hash,
+        BitcoinBlockStrippedSize: result.strippedsize,
+        BitcoinBlockSize: result.size,
+        BitcoinBlockWeight: result.weight,
+        BitcoinBlockVersion: result.version,
+        BitcoinBlockVersionHex: result.versionHex,
+        BitcoinBlockMerkleroot: result.merkleroot,
+        BitcoinBlockTime: result.time,
+        BitcoinBlockMedianTime: result.mediantime,
+        BitcoinBlockNonce: result.nonce,
+        BitcoinBlockBits: result.bits,
+        BitcoinBlockDifficulty: result.difficulty,
+        BitcoinBlockChainwork: result.chainwork,
+        BitcoinBlockPreviousBlockHash: result.previousblockhash,
         Type: network,
         // Disabled because we aren't running the pending/confirmed code for blocks
         // to save calls
@@ -90,22 +127,22 @@ function saveReadingBlock(datastore, network, result) {
             key: datastore.key(['block', id]),
             data: data,
         }).then((result) => {
-            console.log(`Reading Block #${data.EthereumBlockNumber} Saved:\n`, JSON.stringify(result));
-            console.log(`Issuing New Block #${data.EthereumBlockNumber} Webhook Event`);
-            return axios.post(ethereumWebhook, {
-                name: 'block.reading',
-                type: network,
-                password: ethereumWebhookPassword,
-                dataId: data.Id_,
-                dataKind: 'block',
-                data: data,
-            }).then((result) => {
-                console.log(`Successfully Issued New Block #${data.EthereumBlockNumber} Webhook Event`);
-            }).catch((error) => {
-                console.log(`Error Issuing New Block #${data.EthereumBlockNumber} Webhook Event:\n`, error);
-            });
+            console.log(`Reading Block #${data.BitcoinBlockHeight} Saved:\n`, JSON.stringify(result));
+            // console.log(`Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event`)
+            // return axios.post(bitcoinWebhook, {
+            //   name:     'block.reading',
+            //   type:     network,
+            //   password: bitcoinWebhookPassword,
+            //   dataId:   data.Id_,
+            //   dataKind: 'block',
+            //   data:     data,
+            // }).then((result) => {
+            //   console.log(`Successfully Issued New Block #${ data.BitcoinBlockHeight } Webhook Event`)
+            // }).catch((error) => {
+            //   console.log(`Error Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event:\n`, error)
+            // })
         }).catch((error) => {
-            console.log(`Error Saving New Block #${data.EthereumBlockNumber}:\n`, error);
+            console.log(`Error Saving New Block #${data.BitcoinBlockHeight}:\n`, error);
         })];
 }
 function updatePendingBlock(datastore, data) {
@@ -120,10 +157,10 @@ function updatePendingBlock(datastore, data) {
     }).then((result) => {
         console.log(`Pending Block #${data.EthereumBlockNumber} Updated:\n`, JSON.stringify(result));
         console.log(`Issuing Pending Block #${data.EthereumBlockNumber} Webhook Event`);
-        return axios.post(ethereumWebhook, {
+        return axios.post(bitcoinWebhook, {
             name: 'block.pending',
             type: data.Type,
-            password: ethereumWebhookPassword,
+            password: bitcoinWebhookPassword,
             dataId: data.Id_,
             dataKind: 'block',
             data: data,
@@ -158,10 +195,10 @@ function getAndUpdateConfirmedBlock(datastore, network, number, confirmations) {
         }).then((result) => {
             console.log(`Confirmed Block #${data.EthereumBlockNumber} Updated:\n`, JSON.stringify(result));
             console.log(`Issuing Confirmed Block #${data.EthereumBlockNumber} Webhook Event`);
-            return axios.post(ethereumWebhook, {
+            return axios.post(bitcoinWebhook, {
                 name: 'block.confirmed',
                 type: network,
-                password: ethereumWebhookPassword,
+                password: bitcoinWebhookPassword,
                 dataId: data.Id_,
                 dataKind: 'block',
                 data: data,
@@ -218,10 +255,10 @@ function savePendingBlockTransaction(datastore, transaction, network, address, u
         }).then((result) => {
             console.log(`Pending Block Transaction ${transaction.hash} Saved:\n`, JSON.stringify(result));
             console.log(`Issuing Pending Block Transaction ${transaction.hash} Webhook Event`);
-            return axios.post(ethereumWebhook, {
+            return axios.post(bitcoinWebhook, {
                 name: 'blocktransaction.pending',
                 type: network,
-                password: ethereumWebhookPassword,
+                password: bitcoinWebhookPassword,
                 dataId: data.Id_,
                 dataKind: 'blocktransaction',
                 data: data,
@@ -277,10 +314,10 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
                     }).then((result) => {
                         console.log(`Confirmed Block Transaction ${transaction.EthereumTransactionHash} Saved:\n`, JSON.stringify(result));
                         console.log(`Issuing Confirmed Block Transaction ${transaction.EthereumTransactionHash} Webhook Event`);
-                        return axios.post(ethereumWebhook, {
+                        return axios.post(bitcoinWebhook, {
                             name: 'blocktransaction.confirmed',
                             type: network,
-                            password: ethereumWebhookPassword,
+                            password: bitcoinWebhookPassword,
                             dataId: transaction.Id_,
                             dataKind: 'blocktransaction',
                             data: transaction,
@@ -321,151 +358,178 @@ function main() {
             namespace: '_blockchains'
         });
         // Determine ethereum network
-        var network = (process.env.ENVIRONMENT == 'production') ? 'ethereum' : 'ethereum-ropsten';
+        var network = (process.env.ENVIRONMENT == 'production') ? 'bitcoin' : 'bitcoin-testnet';
         // Determine geth/parity node URI
-        var nodeURI = (process.env.ENVIRONMENT == 'production') ? 'http://35.202.166.74:80' : 'http://35.192.74.139:80';
+        var nodeURI = (process.env.ENVIRONMENT == 'production') ? 'http://35.192.49.112:19283' : 'http://104.154.51.133:19283';
+        // Determine username/password
+        var username = (process.env.ENVIRONMENT == 'production' ? 'XqB3yYNcTzNspDQHVgZZNtr3hFZqWbM7PAv4xUnNJv5wCJch5Knc5LStphCsSqRw' : 'dxYJutheHpZkcUssz3A95nPdB2LKh5uc43kvAtdDmyfG37hv6ACEbWhM6jhwfeme');
+        var password = (process.env.ENVIRONMENT == 'production' ? 'CmRuJvYSV2xE4aXRWKUXhKSpCVys7ceEkQ3eEBLTczPrF6h86ZzUkQK7QerjbgwZ' : 'CCMdzTzntX4P7yuYKFHCHqZFjtEUMDPRLDXRmPzkqsyNncREpnT6YLN66frXWAgu');
         console.log(`Starting Reader For '${network}' Using Node '${nodeURI}'`);
         console.log('Initializing Bloom Filter');
-        yield updateBloom(bloom, datastore, network);
-        // Import Web3
-        var Web3 = require('web3');
+        // await updateBloom(bloom, datastore, network)
         console.log('Connecting to', nodeURI);
-        var web3 = new Web3(new Web3.providers.HttpProvider(nodeURI, 10000));
+        // Create BTC Client
+        var client = new BTCClient(nodeURI, username, password);
+        // Determine Connectivity by getting the current block number
+        var currentNumber = yield client.rpc('getblockcount');
         // Ensure a connection was actually established
-        if (!web3.isConnected()) {
+        if (currentNumber instanceof Error) {
             console.log('Could Not Connected');
-            console.log(`Are you running 'sudo geth --cache=1024 --rpc --rpcaddr 0.0.0.0 --rpcport 80 --syncmode=fast --rpccorsdomain "*" in your geth node?'`);
             return;
         }
         console.log('Connected');
         // Report current full block
-        console.log('Current FullBlock Is', web3.eth.blockNumber);
-        // Report Syncing Status
-        var lastBlockData = {};
-        web3.eth.isSyncing((isSynced, blockData) => {
-            if (isSynced) {
-                console.log('Syncing Complete');
-                return;
-            }
-            if (lastBlockData.currentBlock != blockData.currentBlock) {
-                console.log(`Currently @ ${blockData.currentBlock}, Syncing From ${blockData.startingBlock} To ${blockData.highestBlock}`);
-                lastBlockData = blockData;
-            }
-        });
-        var lastBlock = undefined;
+        console.log('Current FullBlock Is', currentNumber);
+        var lastNumber;
         // Query to find the latest block read
-        var query = datastore.createQuery('block').filter('Type', '=', network).order('EthereumBlockNumber', { descending: true }).limit(1);
+        var query = datastore.createQuery('block').filter('Type', '=', network).order('BitcoinBlockHeight', { descending: true }).limit(1);
         console.log('Finding Block To Resume At');
         // Get all the results
         var [results, qInfo] = (yield datastore.runQuery(query));
         if (results[0]) {
             // console.log(JSON.stringify(results[0]))
-            lastBlock = results[0].EthereumBlockNumber;
-            console.log(`Resuming From Block #${lastBlock}`);
+            lastNumber = results[0].BitcoinBlockHeight;
+            console.log(`Resuming From Block #${lastNumber}`);
         }
         else {
-            lastBlock = 'latest';
+            lastNumber = currentNumber;
             console.log(`Resuming From 'latest'`);
         }
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
-        lastBlock = 1962800;
-        // Start watching for new blocks
-        var filter = web3.eth.filter({
-            // 1892728
-            fromBlock: lastBlock,
-            toBlock: 'latest',
-        });
-        var lastNumber = lastBlock == 'latest' ? web3.eth.blockNumber : lastBlock - 1;
-        var currentNumber = lastNumber;
+        // lastBlock = 1962800
         var blockNumber = lastNumber;
         var inflight = 0;
         function run() {
-            // Ignore if inflight limit reached or blocknumber reached
-            if (inflight > inflightLimit || currentNumber >= blockNumber) {
-                return;
-            }
-            console.log(`${inflight} Inflight Requests\nTarget Block #${blockNumber}\nCurrent Block #${currentNumber}`);
-            inflight++;
-            currentNumber++;
-            var number = currentNumber;
-            console.log(`Fetching New Block #${number}`);
-            web3.eth.getBlock(number, true, function (error, result) {
-                return __awaiter(this, void 0, void 0, function* () {
-                    if (error) {
-                        console.log(`Error Fetching Block #${number}:\n`, error);
-                        return;
-                    }
-                    var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, result);
+            return __awaiter(this, void 0, void 0, function* () {
+                // Determine Connectivity by getting the current block number
+                var blockNumber = yield client.rpc('getblockcount');
+                if (currentNumber instanceof Error) {
+                    console.log('Could Not Connected');
+                }
+                // Ignore if inflight limit reached or blocknumber reached
+                if (inflight > inflightLimit || currentNumber >= blockNumber) {
+                    return;
+                }
+                console.log(`\nInflight Requests: ${inflight}\nCurrent Block  #${currentNumber}\nTarget Block #${blockNumber}\n`);
+                inflight++;
+                currentNumber++;
+                var number = currentNumber;
+                console.log(`Fetching New Block #${number}`);
+                client.rpc('getblockhash', number).then((blockHash) => {
+                    return client.rpc('getblock', blockHash);
+                }).then((block) => {
+                    var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, block);
                     setTimeout(function () {
                         return __awaiter(this, void 0, void 0, function* () {
                             yield updateBloom(bloom, datastore, network);
                             // Iterate through transactions looking for ones we care about
-                            for (var transaction of result.transactions) {
+                            for (var tx of block.tx) {
                                 console.log(`Processing Block Transaction ${transaction.hash}`);
-                                var toAddress = transaction.to;
-                                var fromAddress = transaction.from;
-                                console.log(`Checking Addresses\nTo:  ${toAddress}\nFrom: ${fromAddress}`);
-                                if (bloom.test(toAddress)) {
-                                    console.log(`Receiver Address ${toAddress}`);
-                                    // Do the actual query and fetch
-                                    savePendingBlockTransaction(datastore, transaction, network, toAddress, 'receiver');
-                                }
-                                if (bloom.test(fromAddress)) {
-                                    console.log(`Sender Address ${fromAddress}`);
-                                    // Do the actual query and fetch
-                                    savePendingBlockTransaction(datastore, transaction, network, fromAddress, 'sender');
-                                }
+                                client.rpc('getrawtransaction', tx, '1').then((transaction) => {
+                                    var ps = [];
+                                    for (var vin of transaction.vin) {
+                                        ((vin) => {
+                                            var p = client.rpc('getrawtransaction', vin.txid, '1').then((prevTx) => {
+                                                return prevTx.vout[vin.vout];
+                                            });
+                                            ps.push(p);
+                                        })();
+                                    }
+                                    return Promise.all(ps);
+                                }).then(() => {
+                                }).catch(() => {
+                                });
                             }
                         });
                     }, 10000);
-                    // Disabled to save calls
-                    // readingBlockPromise.then(()=>{
-                    //   return updatePendingBlock(datastore, data)
-                    // }).then(()=> {
-                    //   var confirmationBlock = result.number - confirmations
-                    //   return Promise.all([
-                    //     // getAndUpdateConfirmedBlock(
-                    //     //   datastore,
-                    //     //   network,
-                    //     //   confirmationBlock,
-                    //     //   confirmations
-                    //     // ),
-                    //     getAndUpdateConfirmedBlockTransaction(
-                    //       web3,
-                    //       datastore,
-                    //       network,
-                    //       confirmationBlock,
-                    //       confirmations
-                    //     ),
-                    //   ])
-                    // })
-                    ((result) => {
-                        readingBlockPromise.then(() => {
-                            return new Promise((resolve, reject) => {
-                                setTimeout(function () {
-                                    // It is cheaper on calls to just update the blocktransactions instead
-                                    var confirmationBlock = result.number - confirmations;
-                                    resolve(getAndUpdateConfirmedBlockTransaction(web3, datastore, network, confirmationBlock, confirmations));
-                                    inflight--;
-                                }, 12000);
-                            });
-                        });
-                    })(result);
+                }).catch((error) => {
+                    console.log(`Error Fetching Block #${number}:\n`, error);
                 });
+                //   web3.eth.getBlock(number, true, async function(error, result) {
+                //     var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, result)
+                //     setTimeout(async function() {
+                //       await updateBloom(bloom, datastore, network)
+                //       // Iterate through transactions looking for ones we care about
+                //       for(var transaction of result.transactions) {
+                //         console.log(`Processing Block Transaction ${ transaction.hash }`)
+                //         var toAddress   = transaction.to
+                //         var fromAddress = transaction.from
+                //         console.log(`Checking Addresses\nTo:  ${ toAddress }\nFrom: ${ fromAddress }`)
+                //         if (bloom.test(toAddress)) {
+                //           console.log(`Receiver Address ${ toAddress }`)
+                //           // Do the actual query and fetch
+                //           savePendingBlockTransaction(
+                //             datastore,
+                //             transaction,
+                //             network,
+                //             toAddress,
+                //             'receiver',
+                //           )
+                //         }
+                //         if (bloom.test(fromAddress)) {
+                //           console.log(`Sender Address ${ fromAddress }`)
+                //           // Do the actual query and fetch
+                //           savePendingBlockTransaction(
+                //             datastore,
+                //             transaction,
+                //             network,
+                //             fromAddress,
+                //             'sender'
+                //           )
+                //         }
+                //       }
+                //     }, 10000);
+                //     // Disabled to save calls
+                //     // readingBlockPromise.then(()=>{
+                //     //   return updatePendingBlock(datastore, data)
+                //     // }).then(()=> {
+                //     //   var confirmationBlock = result.number - confirmations
+                //     //   return Promise.all([
+                //     //     // getAndUpdateConfirmedBlock(
+                //     //     //   datastore,
+                //     //     //   network,
+                //     //     //   confirmationBlock,
+                //     //     //   confirmations
+                //     //     // ),
+                //     //     getAndUpdateConfirmedBlockTransaction(
+                //     //       web3,
+                //     //       datastore,
+                //     //       network,
+                //     //       confirmationBlock,
+                //     //       confirmations
+                //     //     ),
+                //     //   ])
+                //     // })
+                //     ((result) => {
+                //       readingBlockPromise.then(() => {
+                //         return new Promise((resolve, reject) => {
+                //           setTimeout(function() {
+                //             // It is cheaper on calls to just update the blocktransactions instead
+                //             var confirmationBlock = result.number - confirmations
+                //             resolve(getAndUpdateConfirmedBlockTransaction(
+                //               web3,
+                //               datastore,
+                //               network,
+                //               confirmationBlock,
+                //               confirmations))
+                //             inflight--
+                //           }, 12000)
+                //         })
+                //       })
+                //     })(result)
+                //   })
             });
         }
-        setInterval(run, 1);
-        filter.watch(function (error, result) {
-            return __awaiter(this, void 0, void 0, function* () {
-                if (error) {
-                    console.log('Error While Watching Blocks:\n', error);
-                    return;
-                }
-                // Get currentBlockNumber
-                blockNumber = result.blockNumber;
-            });
-        });
+        setInterval(run, 10000);
+        // filter.watch(async function(error, result) {
+        //   if (error) {
+        //     console.log('Error While Watching Blocks:\n', error)
+        //     return
+        //   }
+        //   // Get currentBlockNumber
+        //   blockNumber = result.blockNumber
+        // })
     });
 }
 main();
