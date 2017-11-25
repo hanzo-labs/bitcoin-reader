@@ -24,10 +24,26 @@ function getRandomId() {
 }
 // Bitcoin Client
 class BTCClient {
-    constructor(address, username, password) {
+    constructor(address, username, password, inflightLimit = 10) {
         this.address = address;
         this.username = username;
         this.password = password;
+        this.inflight = 0;
+        this.inflightLimit = inflightLimit;
+        this._fnQueue = [];
+    }
+    _enqueue(fn) {
+        this._fnQueue.push(fn);
+        // console.log(`Enqueuing a request, Queue Size: ${ this._fnQueue.length }`)
+        this._next();
+    }
+    _next() {
+        if (this._fnQueue.length > 0 && this.inflight < this.inflightLimit) {
+            var fn = this._fnQueue.shift();
+            fn();
+            // console.log(`Executing a request, Inflight: ${ this.inflight }`)
+            this._next();
+        }
     }
     rpc(...params) {
         var method = params.shift();
@@ -47,14 +63,30 @@ class BTCClient {
                 params: params,
             }
         };
-        console.log(`RPC Request\n${JSON.stringify(options)}`);
-        return axios(options).then((res) => {
-            console.log(`RPC Response ${res.data.result}`);
-            if (res.data.result) {
-                return res.data.result;
-            }
-            throw new Error(res.data.error);
+        var fn;
+        var self = this;
+        // console.log(`RPC Request\n${JSON.stringify(options)}`)
+        var p = new Promise((resolve, reject) => {
+            fn = () => {
+                self.inflight++;
+                // console.log(`RPC POST: ${ JSON.stringify(options.data) }`)
+                var p = axios(options).then((res) => {
+                    self.inflight--;
+                    // console.log(`RPC Response ${res.data.result}`)
+                    if (res.data.result) {
+                        // console.log(`RPC POST SUCCESS`)
+                        resolve(res.data.result);
+                    }
+                    else {
+                        // console.log(`RPC POST FAILURE`)
+                        reject(new Error(res.data.error));
+                    }
+                    self._next();
+                });
+            };
         });
+        this._enqueue(fn);
+        return p;
     }
 }
 // This function updates a bloom filter with new addresses
@@ -145,76 +177,7 @@ function saveReadingBlock(datastore, network, result) {
             console.log(`Error Saving New Block #${data.BitcoinBlockHeight}:\n`, error);
         })];
 }
-function updatePendingBlock(datastore, data) {
-    console.log(`Updating Reading Block #'${data.Id_}' To Pending Status`);
-    // Update the block status to pending
-    data.Status = 'pending';
-    data.UpdatedAt = moment().toDate();
-    // Save the data to the key
-    return datastore.save({
-        key: datastore.key(['block', data.Id_]),
-        data: data,
-    }).then((result) => {
-        console.log(`Pending Block #${data.EthereumBlockNumber} Updated:\n`, JSON.stringify(result));
-        console.log(`Issuing Pending Block #${data.EthereumBlockNumber} Webhook Event`);
-        return axios.post(bitcoinWebhook, {
-            name: 'block.pending',
-            type: data.Type,
-            password: bitcoinWebhookPassword,
-            dataId: data.Id_,
-            dataKind: 'block',
-            data: data,
-        }).then((result) => {
-            console.log(`Successfully Issued Pending Block #${data.EthereumBlockNumber} Webhook Event`);
-        }).catch((error) => {
-            console.log(`Error Issuing Pending Block #${data.EthereumBlockNumber} Webhook Event:\n`, error);
-        });
-    }).catch((error) => {
-        console.log(`Error Updating Reading Block #${data.EthereumBlockNumber}:\n`, error);
-    });
-}
-function getAndUpdateConfirmedBlock(datastore, network, number, confirmations) {
-    var id = `${network}/${number}`;
-    var key = datastore.key(['block', id]);
-    console.log(`Fetching Pending Block #'${number}'`);
-    // Get the pending block to confirm
-    return datastore.get(key).then((result) => {
-        var [data] = result;
-        if (!data) {
-            console.log(`Pending Block #${number} Not Found`);
-            return;
-        }
-        data.Confirmations = confirmations;
-        data.UpdatedAt = moment().toDate();
-        data.Status = 'confirmed';
-        console.log(`Updating Pending Block #${number} To Confirmed Status`);
-        // Save the data to the key
-        return datastore.save({
-            key: key,
-            data: data,
-        }).then((result) => {
-            console.log(`Confirmed Block #${data.EthereumBlockNumber} Updated:\n`, JSON.stringify(result));
-            console.log(`Issuing Confirmed Block #${data.EthereumBlockNumber} Webhook Event`);
-            return axios.post(bitcoinWebhook, {
-                name: 'block.confirmed',
-                type: network,
-                password: bitcoinWebhookPassword,
-                dataId: data.Id_,
-                dataKind: 'block',
-                data: data,
-            }).then((result) => {
-                console.log(`Successfully Issued Confirmed Block #${data.EthereumBlockNumber} Webhook Event`);
-            }).catch((error) => {
-                console.log(`Error Issuing Confirmed Block #${data.EthereumBlockNumber} Webhook Event:\n`, error);
-            });
-        }).catch((error) => {
-            console.log(`Error Saving Confirmed Block #${data.EthereumBlockNumber}:\n`, error);
-        });
-    }).catch((error) => {
-        console.log(`Error Getting Pending Block #${number}:\n`, error);
-    });
-}
-function savePendingBlockTransaction(datastore, transaction, network, address, usage) {
+function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, vOut, vIdx, network, address, usage) {
     var query = datastore.createQuery('blockaddress').filter('Type', '=', network).filter('Address', '=', address);
     console.log(`Checking If Address ${address} Is Being Watched`);
     // Get all the results
@@ -222,24 +185,27 @@ function savePendingBlockTransaction(datastore, transaction, network, address, u
         var [results, qInfo] = resultsAndQInfo;
         if (!results || !results[0]) {
             console.log(`Address ${address} Not Found:\n`, qInfo);
+            process.exit();
             return;
         }
         var createdAt = moment().toDate();
         // Convert to the Go Compatible Datastore Representation
-        var id = `${network}/${address}/${transaction.hash}`;
+        var id = `${network}/${address}/${transaction.txid}`;
         var data = {
             Id_: id,
-            EthereumTransactionHash: transaction.hash,
-            EthereumTransactionNonce: transaction.nonce,
-            EthereumTransactionBlockHash: transaction.blockHash,
-            EthereumTransactionBlockNumber: transaction.blockNumber,
-            EthereumTransactionTransactionIndex: transaction.transactionIndex,
-            EthereumTransactionFrom: transaction.from,
-            EthereumTransactionTo: transaction.to,
-            EthereumTransactionValue: transaction.value.toString(10),
-            EthereumTransactionGasPrice: transaction.gasPrice.toString(10),
-            EthereumTransactionGas: transaction.gas.toString(10),
-            EthereumTransactionInput: transaction.input,
+            BitcoinTransactionBlockHash: transaction.blockhash,
+            BitcoinTransactionBlockHeight: transaction.height,
+            BitcoinTransactionTxId: transaction.txid,
+            BitcoinTransactionHash: transaction.hash,
+            BitcoinTransactionVersion: transaction.version,
+            BitcoinTransactionSize: transaction.size,
+            BitcoinTransactionVSize: transaction.vsize,
+            BitcoinTransactionLocktime: transaction.locktime,
+            BitcoinTransactionHex: transaction.hex,
+            BitcoinTransactionConfirmations: transaction.confirmations,
+            BitcoinTransactionTime: transaction.time,
+            BitcoinTransactionBlockTime: transaction.blocktime,
+            BitcoinTransactionType: vIn ? 'vin' : vOut ? 'vout' : 'error',
             Address: address,
             Usage: usage,
             Type: network,
@@ -247,35 +213,49 @@ function savePendingBlockTransaction(datastore, transaction, network, address, u
             UpdatedAt: createdAt,
             CreatedAt: createdAt,
         };
+        // console.log(`Transaction:\n${ JSON.stringify(transaction)}\nvIn:\n${ JSON.stringify(vIn) }\nvOut:\n${ JSON.stringify(vOut) }\n`)
+        // console.log(`Type: ${ vIn ? 'vin' : vOut ? 'vout' : 'error' }`)
+        if (vIn) {
+            data.BitcoinTransactionVInTransactionTxId = vIn.txid;
+            data.BitcoinTransactionVInTransactionIndex = vIn.vout;
+            data.BitcoinTransactionVInIndex = vIdx;
+            data.BitcoinTransactionVInValue = vIn.value;
+        }
+        else if (vOut) {
+            data.BitcoinTransactionVOutIndex = vOut.n;
+            data.BitcoinTransactionVOutValue = vOut.value;
+        }
         console.log(`Saving New Block Transaction with Id '${id}' In Pending Status`);
+        console.log(`Transaction ${JSON.stringify(transaction)}`);
         // Save the data to the key
         return datastore.save({
             key: datastore.key(['blocktransaction', id]),
             data: data,
         }).then((result) => {
-            console.log(`Pending Block Transaction ${transaction.hash} Saved:\n`, JSON.stringify(result));
-            console.log(`Issuing Pending Block Transaction ${transaction.hash} Webhook Event`);
-            return axios.post(bitcoinWebhook, {
-                name: 'blocktransaction.pending',
-                type: network,
-                password: bitcoinWebhookPassword,
-                dataId: data.Id_,
-                dataKind: 'blocktransaction',
-                data: data,
-            }).then((result) => {
-                console.log(`Successfully Issued Pending Block Transaction ${transaction.hash} Webhook Event`);
-            }).catch((error) => {
-                console.log(`Error Issuing Pending Block Transaction ${transaction.hash} Webhook Event:\n`, error);
-            });
+            // console.log(`Pending Block Transaction ${ transaction.hash } Saved:\n`, JSON.stringify(result))
+            // console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
+            // return axios.post(bitcoinWebhook, {
+            //   name:     'blocktransaction.pending',
+            //   type:     network,
+            //   password: bitcoinWebhookPassword,
+            //   dataId:   data.Id_,
+            //   dataKind: 'blocktransaction',
+            //   data:     data,
+            // }).then((result) => {
+            //   console.log(`Successfully Issued Pending Block Transaction ${ transaction.hash } Webhook Event`)
+            // }).catch((error) => {
+            //   console.log(`Error Issuing Pending Block Transaction ${ transaction.hash } Webhook Event:\n`, error)
+            // })
         }).catch((error) => {
-            console.log(`Error Saving New Block Transaction ${transaction.hash}:\n`, error);
+            console.log(`Error Saving New Block Transaction ${transaction.txid}`);
         });
+        process.exit();
     }).catch((error) => {
         console.log(`Address ${address} Not Found Due to Error:\n`, error);
     });
 }
-function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number, confirmations) {
-    var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('EthereumTransactionBlockNumber', '=', number);
+function getAndUpdateConfirmedBlockTransaction(client, datastore, network, number, confirmations) {
+    var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('BitcoinTransactionBlockHeight', '=', number);
     console.log(`Fetching Pending Block Transactions From Block #${number}`);
     // Get all the results
     return datastore.runQuery(query).then((resultsAndQInfo) => {
@@ -284,26 +264,14 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
             console.log(`Block #${number} Has No Block Transactions:\n`, qInfo);
             return;
         }
+        console.log(`Block #${number} Has ${results.length} Block Transactions:\n`, qInfo);
         // Loop over the blocks
         var ps = results.map((transaction) => {
             var id = transaction.Id_;
             var key = datastore.key(['blocktransaction', id]);
-            console.log(`Fetching Pending Block Transaction '${transaction.EthereumTransactionHash}' Receipt`);
+            console.log(`Fetching Pending Block Transaction with Id '${transaction.Id_}'`);
             return new Promise((resolve, reject) => {
-                web3.eth.getTransactionReceipt(transaction.EthereumTransactionHash, (error, receipt) => {
-                    console.log(error, JSON.stringify(receipt));
-                    if (error) {
-                        return reject(error);
-                    }
-                    transaction.EthereumTransactionReceiptBlockHash = receipt.blockHash;
-                    transaction.EthereumTransactionReceiptBlockNumber = receipt.blockNumber;
-                    transaction.EthereumTransactionReceiptTransactionHash = receipt.transactionHash;
-                    transaction.EthereumTransactionReceiptTransactionIndex = receipt.transactionIndex;
-                    transaction.EthereumTransactionReceiptFrom = receipt.from;
-                    transaction.EthereumTransactionReceiptTo = receipt.to;
-                    transaction.EthereumTransactionReceiptCumulativeGasUsed = receipt.cumulativeGasUsed;
-                    transaction.EthereumTransactionReceiptGasUsed = receipt.gasUsed;
-                    transaction.EthereumTransactionReceiptContractAddress = receipt.contractAddress;
+                client.rpc('getrawtransaction', transaction.BitcoinTransactionTxId, true).then((tx) => {
                     transaction.Confirmations = confirmations;
                     transaction.UpdatedAt = moment().toDate();
                     transaction.Status = 'confirmed';
@@ -312,22 +280,22 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
                         key: key,
                         data: transaction,
                     }).then((result) => {
-                        console.log(`Confirmed Block Transaction ${transaction.EthereumTransactionHash} Saved:\n`, JSON.stringify(result));
-                        console.log(`Issuing Confirmed Block Transaction ${transaction.EthereumTransactionHash} Webhook Event`);
-                        return axios.post(bitcoinWebhook, {
-                            name: 'blocktransaction.confirmed',
-                            type: network,
-                            password: bitcoinWebhookPassword,
-                            dataId: transaction.Id_,
-                            dataKind: 'blocktransaction',
-                            data: transaction,
-                        }).then((result) => {
-                            console.log(`Successfully Issued Confirmed Block Transaction ${transaction.EthereumTransactionHash} Webhook Event`);
-                        }).catch((error) => {
-                            console.log(`Error Issuing Confirmed Block Transaction ${transaction.EthereumTransactionHash} Webhook Event:\n`, error);
-                        });
+                        console.log(`Confirmed Block Transaction with Id ${id} Saved:\n`, JSON.stringify(result));
+                        // console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
+                        // return axios.post(bitcoinWebhook, {
+                        //   name:     'blocktransaction.confirmed',
+                        //   type:     network,
+                        //   password: bitcoinWebhookPassword,
+                        //   dataId:   transaction.Id_,
+                        //   dataKind: 'blocktransaction',
+                        //   data:     transaction,
+                        // }).then((result) => {
+                        //   console.log(`Successfully Issued Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
+                        // }).catch((error) => {
+                        //   console.log(`Error Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event:\n`, error)
+                        // })
                     }).catch((error) => {
-                        console.log(`Error Updating Pending Block Transaction ${transaction.EthereumTransactionHash}:\n`, error);
+                        console.log(`Error Updating Pending Block Transaction with Id ${id}:\n`, error);
                     }));
                 });
             });
@@ -342,10 +310,10 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
 var { BloomFilter } = require('bloomfilter');
 // Imports the Google Cloud client library
 var Datastore = require('@google-cloud/datastore');
-// How many confirmations does it take to confirm? (default: 12)
-var confirmations = process.env.CONFIRMATIONS || 12;
-// How many concurrent blocks can it be processing? (default: 10)
-var inflightLimit = process.env.INFLIGHT_LIMIT || 10;
+// How many confirmations does it take to confirm? (default: 2)
+var confirmations = process.env.CONFIRMATIONS || 2;
+// How many concurrent blocks can it be processing? (default: 4)
+var inflightLimit = process.env.INFLIGHT_LIMIT || 4;
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
         // Initialize the Bloomfilter for a 1*10^-6 error rate for 1 million entries)
@@ -369,7 +337,7 @@ function main() {
         // await updateBloom(bloom, datastore, network)
         console.log('Connecting to', nodeURI);
         // Create BTC Client
-        var client = new BTCClient(nodeURI, username, password);
+        var client = new BTCClient(nodeURI, username, password, inflightLimit);
         // Determine Connectivity by getting the current block number
         var currentNumber = yield client.rpc('getblockcount');
         // Ensure a connection was actually established
@@ -397,48 +365,103 @@ function main() {
         }
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
-        // lastBlock = 1962800
+        currentNumber = 1231590;
+        lastNumber = 1231600;
         var blockNumber = lastNumber;
-        var inflight = 0;
         function run() {
             return __awaiter(this, void 0, void 0, function* () {
                 // Determine Connectivity by getting the current block number
-                var blockNumber = yield client.rpc('getblockcount');
+                // blockNumber = await client.rpc('getblockcount')
                 if (currentNumber instanceof Error) {
                     console.log('Could Not Connected');
                 }
-                // Ignore if inflight limit reached or blocknumber reached
-                if (inflight > inflightLimit || currentNumber >= blockNumber) {
+                console.log(`Current Block  #${currentNumber}\nTarget Block #${blockNumber}\n`);
+                // Ignore if blocknumber reached
+                if (currentNumber >= blockNumber) {
                     return;
                 }
-                console.log(`\nInflight Requests: ${inflight}\nCurrent Block  #${currentNumber}\nTarget Block #${blockNumber}\n`);
-                inflight++;
-                currentNumber++;
+                console.log(`\nInflight Requests: ${client.inflight}\n`);
                 var number = currentNumber;
+                currentNumber++;
                 console.log(`Fetching New Block #${number}`);
                 client.rpc('getblockhash', number).then((blockHash) => {
                     return client.rpc('getblock', blockHash);
                 }).then((block) => {
                     var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, block);
+                    ((block) => {
+                        readingBlockPromise.then(() => {
+                            return new Promise((resolve, reject) => {
+                                setTimeout(function () {
+                                    // It is cheaper on calls to just update the blocktransactions instead
+                                    var confirmationBlock = number - confirmations;
+                                    resolve(getAndUpdateConfirmedBlockTransaction(client, datastore, network, confirmationBlock, confirmations));
+                                }, 12000);
+                            });
+                        });
+                    })(block);
                     setTimeout(function () {
                         return __awaiter(this, void 0, void 0, function* () {
                             yield updateBloom(bloom, datastore, network);
                             // Iterate through transactions looking for ones we care about
                             for (var tx of block.tx) {
-                                console.log(`Processing Block Transaction ${transaction.hash}`);
-                                client.rpc('getrawtransaction', tx, '1').then((transaction) => {
+                                console.log(`Processing Block Transaction ${tx}`);
+                                if (!tx) {
+                                    console.log(`It happened! Block:\n${JSON.stringify(block)}\nTransaction:\n${tx}`);
+                                    process.exit();
+                                }
+                                client.rpc('getrawtransaction', tx, true).then((transaction) => {
+                                    // Add height to the transaction for easy referencing
+                                    transaction.height = number;
                                     var ps = [];
-                                    for (var vin of transaction.vin) {
-                                        ((vin) => {
-                                            var p = client.rpc('getrawtransaction', vin.txid, '1').then((prevTx) => {
-                                                return prevTx.vout[vin.vout];
+                                    for (var i in transaction.vin) {
+                                        var vin = transaction.vin[i];
+                                        // Skip coinbase transactions
+                                        if (!vin.txid) {
+                                            continue;
+                                        }
+                                        ((vin, transaction) => {
+                                            var p = client.rpc('getrawtransaction', vin.txid, true).then((previousTransaction) => {
+                                                return {
+                                                    transaction: transaction,
+                                                    previousTransaction: previousTransaction,
+                                                    previousVOut: previousTransaction.vout[vin.vout],
+                                                    vIn: vin,
+                                                };
                                             });
                                             ps.push(p);
-                                        })();
+                                        })(vin, transaction);
+                                    }
+                                    // Loop through vOuts to determine if there are transactions
+                                    // received
+                                    for (var i in transaction.vout) {
+                                        var vOut = transaction.vout[i];
+                                        var vOutAddress = vOut.scriptPubKey.addresses[0];
+                                        if (bloom.test(vOutAddress)) {
+                                            console.log(`Receiver Address ${vOutAddress}`);
+                                            // Do the actual query and fetch
+                                            savePendingBlockTransaction(datastore, number, transaction, null, vOut, i, network, vOutAddress, 'receiver');
+                                        }
                                     }
                                     return Promise.all(ps);
-                                }).then(() => {
-                                }).catch(() => {
+                                }).then((...psResults) => {
+                                    // Loop through vIns to determine if there are transactions
+                                    // sent
+                                    for (var i in psResults) {
+                                        var psResult = psResults[i][0];
+                                        var vIn = psResult.vIn;
+                                        var previousVOut = psResult.previousVOut;
+                                        var transaction = psResult.transaction;
+                                        var vInAddress = previousVOut.scriptPubKey.addresses[0];
+                                        // Merge Previous vOut and vIn
+                                        var vIn, value = previousVOut.value;
+                                        if (bloom.test(vInAddress)) {
+                                            console.log(`Sender Address ${vInAddress}`);
+                                            // Do the actual query and fetch
+                                            savePendingBlockTransaction(datastore, number, transaction, vIn, null, i, network, vInAddress, 'sender');
+                                        }
+                                    }
+                                }).catch((error) => {
+                                    // console.log(`Error Fetching Previous Block Transaction for vIn:\n`, error)
                                 });
                             }
                         });
@@ -501,23 +524,6 @@ function main() {
                 //     //     ),
                 //     //   ])
                 //     // })
-                //     ((result) => {
-                //       readingBlockPromise.then(() => {
-                //         return new Promise((resolve, reject) => {
-                //           setTimeout(function() {
-                //             // It is cheaper on calls to just update the blocktransactions instead
-                //             var confirmationBlock = result.number - confirmations
-                //             resolve(getAndUpdateConfirmedBlockTransaction(
-                //               web3,
-                //               datastore,
-                //               network,
-                //               confirmationBlock,
-                //               confirmations))
-                //             inflight--
-                //           }, 12000)
-                //         })
-                //       })
-                //     })(result)
                 //   })
             });
         }

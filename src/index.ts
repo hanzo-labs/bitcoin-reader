@@ -6,11 +6,11 @@ var { BloomFilter } = require('bloomfilter')
 // Imports the Google Cloud client library
 var Datastore = require('@google-cloud/datastore')
 
-// How many confirmations does it take to confirm? (default: 12)
-var confirmations = process.env.CONFIRMATIONS || 12
+// How many confirmations does it take to confirm? (default: 2)
+var confirmations = process.env.CONFIRMATIONS || 2
 
-// How many concurrent blocks can it be processing? (default: 10)
-var inflightLimit = process.env.INFLIGHT_LIMIT || 10
+// How many concurrent blocks can it be processing? (default: 4)
+var inflightLimit = process.env.INFLIGHT_LIMIT || 4
 
 async function main() {
   // Initialize the Bloomfilter for a 1*10^-6 error rate for 1 million entries)
@@ -44,7 +44,7 @@ async function main() {
   console.log('Connecting to', nodeURI)
 
   // Create BTC Client
-  var client = new BTCClient(nodeURI, username, password)
+  var client = new BTCClient(nodeURI, username, password, inflightLimit)
 
   // Determine Connectivity by getting the current block number
   var currentNumber = await client.rpc('getblockcount')
@@ -84,63 +84,96 @@ async function main() {
 
   console.log('Start Watching For New Blocks')
 
-  // lastBlock = 1962800
-
-  var blockNumber   = lastNumber
-  var inflight      = 0
+  currentNumber = 1231590
+  lastNumber    = 1231600
+  var blockNumber = lastNumber
 
   async function run() {
     // Determine Connectivity by getting the current block number
-    var blockNumber = await client.rpc('getblockcount')
+    // blockNumber = await client.rpc('getblockcount')
 
     if (currentNumber instanceof Error) {
       console.log('Could Not Connected')
     }
 
-    // Ignore if inflight limit reached or blocknumber reached
-    if (inflight > inflightLimit || currentNumber >= blockNumber) {
+    console.log(`Current Block  #${ currentNumber }\nTarget Block #${ blockNumber }\n`)
+
+    // Ignore if blocknumber reached
+    if (currentNumber >= blockNumber) {
       return
     }
 
-    console.log(`\nInflight Requests: ${ inflight }\nCurrent Block  #${ currentNumber }\nTarget Block #${ blockNumber }\n`)
+    console.log(`\nInflight Requests: ${ client.inflight }\n`)
 
-    inflight++
-
-    currentNumber++
     var number = currentNumber
+    currentNumber++
 
     console.log(`Fetching New Block #${ number }`)
 
     client.rpc('getblockhash', number).then((blockHash) => {
       return client.rpc('getblock', blockHash)
     }).then((block) => {
-      var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, block)
+      var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, block);
+
+      ((block) => {
+        readingBlockPromise.then(() => {
+          return new Promise((resolve, reject) => {
+            setTimeout(function() {
+              // It is cheaper on calls to just update the blocktransactions instead
+              var confirmationBlock = number - confirmations
+              resolve(getAndUpdateConfirmedBlockTransaction(
+                client,
+                datastore,
+                network,
+                confirmationBlock,
+                confirmations))
+            }, 12000)
+          })
+        })
+      })(block);
 
       setTimeout(async function() {
         await updateBloom(bloom, datastore, network)
 
         // Iterate through transactions looking for ones we care about
         for(var tx of block.tx) {
-          console.log(`Processing Block Transaction ${ transaction.hash }`)
+          console.log(`Processing Block Transaction ${ tx }`)
 
-          client.rpc('getrawtransaction', tx, '1').then((transaction) => {
+          if (!tx) {
+            console.log(`It happened! Block:\n${ JSON.stringify(block) }\nTransaction:\n${ tx }`)
+            process.exit()
+          }
+
+          client.rpc('getrawtransaction', tx, true).then((transaction) => {
+            // Add height to the transaction for easy referencing
+            transaction.height = number
             var ps = []
-            for (var vin of transaction.vin) {
-              ((vin) => {
-                var p = client.rpc('getrawtransaction', vin.txid, '1').then((prevTx) => {
+            for (var i in transaction.vin) {
+              var vin = transaction.vin[i];
+              // Skip coinbase transactions
+              if (!vin.txid) {
+                continue
+              }
+
+              ((vin, transaction) => {
+
+                var p = client.rpc('getrawtransaction', vin.txid, true).then((previousTransaction) => {
                   return {
                     transaction: transaction,
-                    vIn: prevTx.vout[vin.vout]
+                    previousTransaction: previousTransaction,
+                    previousVOut: previousTransaction.vout[vin.vout],
+                    vIn: vin,
                   }
                 })
                 ps.push(p)
-              })();
+              })(vin, transaction);
             }
 
-            for (var i in tx.vout) {
-              var vOut        = tx.vout[i]
-              var transaction = tx
-              var vOutAddress = vOut.addresses[0]
+            // Loop through vOuts to determine if there are transactions
+            // received
+            for (var i in transaction.vout) {
+              var vOut        = transaction.vout[i]
+              var vOutAddress = vOut.scriptPubKey.addresses[0]
 
               if (bloom.test(vOutAddress)) {
                 console.log(`Receiver Address ${ vOutAddress }`)
@@ -152,6 +185,7 @@ async function main() {
                   transaction,
                   null,
                   vOut,
+                  i,
                   network,
                   vOutAddress,
                   'receiver',
@@ -161,30 +195,37 @@ async function main() {
 
             return Promise.all(ps)
           }).then((...psResults) => {
-            for (var psResult of psResults) {
-              var txVIn       = psResult.value
-              var vIn         = txVIn.vIn
-              var transaction = txVIn.transaction
-              var vInAddress  = vIn.addresses[0]
+            // Loop through vIns to determine if there are transactions
+            // sent
+            for (var i in psResults) {
+              var psResult     = psResults[i][0]
+              var vIn          = psResult.vIn
+              var previousVOut = psResult.previousVOut
+              var transaction  = psResult.transaction
+              var vInAddress   = previousVOut.scriptPubKey.addresses[0]
+
+              // Merge Previous vOut and vIn
+              var vIn.value = previousVOut.value
 
               if (bloom.test(vInAddress)) {
-                console.log(`Receiver Address ${ vInAddress }`)
+                console.log(`Sender Address ${ vInAddress }`)
 
                 // Do the actual query and fetch
                 savePendingBlockTransaction(
                   datastore,
                   number,
                   transaction,
-                  vin,
+                  vIn,
                   null,
+                  i,
                   network,
-                  vOutAddress,
-                  'receiver',
+                  vInAddress,
+                  'sender',
                 )
               }
             }
-          }).catch(() => {
-
+          }).catch((error) => {
+            // console.log(`Error Fetching Previous Block Transaction for vIn:\n`, error)
           })
         }
       }, 10000);
@@ -257,23 +298,6 @@ async function main() {
   //     //   ])
   //     // })
 
-  //     ((result) => {
-  //       readingBlockPromise.then(() => {
-  //         return new Promise((resolve, reject) => {
-  //           setTimeout(function() {
-  //             // It is cheaper on calls to just update the blocktransactions instead
-  //             var confirmationBlock = result.number - confirmations
-  //             resolve(getAndUpdateConfirmedBlockTransaction(
-  //               web3,
-  //               datastore,
-  //               network,
-  //               confirmationBlock,
-  //               confirmations))
-  //             inflight--
-  //           }, 12000)
-  //         })
-  //       })
-  //     })(result)
   //   })
   }
 

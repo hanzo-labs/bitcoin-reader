@@ -26,11 +26,32 @@ class BTCClient {
   address: string
   username: string
   password: string
+  inflight: number
+  inflightLimit: number
+  _fnQueue: {(): void}[]
 
-  constructor(address: string, username: string, password: string) {
+  constructor(address: string, username: string, password: string, inflightLimit = 10) {
     this.address  = address
     this.username = username
     this.password = password
+    this.inflight = 0
+    this.inflightLimit = inflightLimit
+    this._fnQueue = []
+  }
+
+  _enqueue(fn: {():void} ) {
+    this._fnQueue.push(fn)
+    // console.log(`Enqueuing a request, Queue Size: ${ this._fnQueue.length }`)
+    this._next()
+  }
+
+  _next() {
+    if (this._fnQueue.length > 0 && this.inflight < this.inflightLimit) {
+      var fn = this._fnQueue.shift()
+      fn()
+      // console.log(`Executing a request, Inflight: ${ this.inflight }`)
+      this._next()
+    }
   }
 
   rpc(...params: string[]) {
@@ -53,16 +74,32 @@ class BTCClient {
       }
     }
 
-    console.log(`RPC Request\n${JSON.stringify(options)}`)
+    var fn: { ():void }
+    var self = this
 
-    return axios(options).then((res)=> {
-      console.log(`RPC Response ${res.data.result}`)
-      if (res.data.result) {
-        return res.data.result
+    // console.log(`RPC Request\n${JSON.stringify(options)}`)
+    var p = new Promise((resolve, reject) => {
+      fn = ()=> {
+        self.inflight++
+        // console.log(`RPC POST: ${ JSON.stringify(options.data) }`)
+        var p = axios(options).then((res) => {
+          self.inflight--
+          // console.log(`RPC Response ${res.data.result}`)
+          if (res.data.result) {
+            // console.log(`RPC POST SUCCESS`)
+            resolve(res.data.result)
+          } else {
+            // console.log(`RPC POST FAILURE`)
+            reject(new Error(res.data.error))
+          }
+          self._next()
+        })
       }
-
-      throw new Error(res.data.error)
     })
+
+    this._enqueue(fn)
+
+    return p
   }
 }
 
@@ -171,7 +208,7 @@ function saveReadingBlock(datastore, network, result) {
   })]
 }
 
-function savePendingBlockTransaction(datastore, number, transaction, vin, vout, network, usage) {
+function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, vOut, vIdx, network, address, usage) {
   var query = datastore.createQuery('blockaddress').filter('Type', '=', network).filter('Address', '=', address)
 
   console.log(`Checking If Address ${ address } Is Being Watched`)
@@ -181,40 +218,31 @@ function savePendingBlockTransaction(datastore, number, transaction, vin, vout, 
     var [results, qInfo] = resultsAndQInfo
     if (!results || !results[0]) {
       console.log(`Address ${ address } Not Found:\n`, qInfo)
+      process.exit()
       return
     }
 
     var createdAt = moment().toDate()
 
     // Convert to the Go Compatible Datastore Representation
-    var id  = `${ network }/${address}/${ transaction.hash }`
+    var id  = `${ network }/${address}/${ transaction.txid }`
     var data = {
       Id_: id,
 
-      BitcoinTransactionHeight        string                 `json:"bitcoinTransactionHeight"`
-      BitcoinTransactionHash          string                 `json:"bitcoinTransactionHash"`
-      BitcoinTransactionVersion       int64                  `json:"bitcoinTransactionVersion"`
-      BitcoinTransactionSize          int64                  `json:"bitcoinTransactionSize"`
-      BitcoinTransactionVSize         int64                  `json:"bitcoinTransactionVSize"`
-      BitcoinTransactionLocktime      int64                  `json:"bitcoinTransactionLocktime"`
-      BitcoinTransactionHex           string                 `json:"bitcoinTransactionHex"`
-      BitcoinTransactionBlockHash     string                 `json:"bitcoinTransactionBlockHash"`
-      BitcoinTransactionConfirmations int64                  `json:"bitcoinTransactionConfirmations"`
-      BitcoinTransactionTime          int64                  `json:"bitcoinTransactionTime"`
-      BitcoinTransactionBlockTime     int64                  `json:"bitcoinTransactionBlockTime"`
-      BitcoinTransactionType          BitcoinTransactionType `json:"bitcoinTransactionType"`
+      BitcoinTransactionBlockHash:     transaction.blockhash,
+      BitcoinTransactionBlockHeight:   transaction.height,
 
-      EthereumTransactionHash:             transaction.hash,
-      EthereumTransactionNonce:            transaction.nonce,
-      EthereumTransactionBlockHash:        transaction.blockHash,
-      EthereumTransactionBlockNumber:      transaction.blockNumber,
-      EthereumTransactionTransactionIndex: transaction.transactionIndex,
-      EthereumTransactionFrom:             transaction.from,
-      EthereumTransactionTo:               transaction.to,
-      EthereumTransactionValue:            transaction.value.toString(10),
-      EthereumTransactionGasPrice:         transaction.gasPrice.toString(10),
-      EthereumTransactionGas:              transaction.gas.toString(10),
-      EthereumTransactionInput:            transaction.input,
+      BitcoinTransactionTxId:          transaction.txid,
+      BitcoinTransactionHash:          transaction.hash,
+      BitcoinTransactionVersion:       transaction.version,
+      BitcoinTransactionSize:          transaction.size,
+      BitcoinTransactionVSize:         transaction.vsize,
+      BitcoinTransactionLocktime:      transaction.locktime,
+      BitcoinTransactionHex:           transaction.hex,
+      BitcoinTransactionConfirmations: transaction.confirmations,
+      BitcoinTransactionTime           transaction.time,
+      BitcoinTransactionBlockTime      transaction.blocktime
+      BitcoinTransactionType           vIn ? 'vin' : vOut ? 'vout' : 'error'
 
       Address: address,
       Usage:   usage,
@@ -225,39 +253,54 @@ function savePendingBlockTransaction(datastore, number, transaction, vin, vout, 
       CreatedAt: createdAt,
     }
 
+    // console.log(`Transaction:\n${ JSON.stringify(transaction)}\nvIn:\n${ JSON.stringify(vIn) }\nvOut:\n${ JSON.stringify(vOut) }\n`)
+    // console.log(`Type: ${ vIn ? 'vin' : vOut ? 'vout' : 'error' }`)
+
+    if (vIn) {
+      data.BitcoinTransactionVInTransactionTxId  = vIn.txid
+      data.BitcoinTransactionVInTransactionIndex = vIn.vout
+      data.BitcoinTransactionVInIndex            = vIdx
+      data.BitcoinTransactionVInValue            = vIn.value
+    } else if (vOut) {
+      data.BitcoinTransactionVOutIndex = vOut.n
+      data.BitcoinTransactionVOutValue = vOut.value
+    }
+
     console.log(`Saving New Block Transaction with Id '${ id }' In Pending Status`)
+    // console.log(`Transaction ${ JSON.stringify(transaction) }`)
 
     // Save the data to the key
     return datastore.save({
       key:  datastore.key(['blocktransaction', id]),
       data: data,
     }).then((result)=> {
-      console.log(`Pending Block Transaction ${ transaction.hash } Saved:\n`, JSON.stringify(result))
+      // console.log(`Pending Block Transaction ${ transaction.hash } Saved:\n`, JSON.stringify(result))
 
-      console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
-      return axios.post(bitcoinWebhook, {
-        name:     'blocktransaction.pending',
-        type:     network,
-        password: bitcoinWebhookPassword,
+      // console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
+      // return axios.post(bitcoinWebhook, {
+      //   name:     'blocktransaction.pending',
+      //   type:     network,
+      //   password: bitcoinWebhookPassword,
 
-        dataId:   data.Id_,
-        dataKind: 'blocktransaction',
-        data:     data,
-      }).then((result) => {
-        console.log(`Successfully Issued Pending Block Transaction ${ transaction.hash } Webhook Event`)
-      }).catch((error) => {
-        console.log(`Error Issuing Pending Block Transaction ${ transaction.hash } Webhook Event:\n`, error)
-      })
+      //   dataId:   data.Id_,
+      //   dataKind: 'blocktransaction',
+      //   data:     data,
+      // }).then((result) => {
+      //   console.log(`Successfully Issued Pending Block Transaction ${ transaction.hash } Webhook Event`)
+      // }).catch((error) => {
+      //   console.log(`Error Issuing Pending Block Transaction ${ transaction.hash } Webhook Event:\n`, error)
+      // })
     }).catch((error) =>{
-      console.log(`Error Saving New Block Transaction ${ transaction.hash }:\n`, error)
+      console.log(`Error Saving New Block Transaction ${ transaction.txid }`)
     })
+    process.exit()
   }).catch((error) => {
     console.log(`Address ${ address } Not Found Due to Error:\n`, error)
   })
 }
 
-function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number, confirmations) {
-  var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('EthereumTransactionBlockNumber', '=', number)
+function getAndUpdateConfirmedBlockTransaction(client, datastore, network, number, confirmations) {
+  var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('BitcoinTransactionBlockHeight', '=', number)
 
   console.log(`Fetching Pending Block Transactions From Block #${ number }`)
 
@@ -269,31 +312,17 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
       console.log(`Block #${ number } Has No Block Transactions:\n`, qInfo)
       return
     }
+    console.log(`Block #${ number } Has ${ results.length } Block Transactions:\n`, qInfo)
 
     // Loop over the blocks
     var ps = results.map((transaction) => {
       var id  = transaction.Id_
       var key = datastore.key(['blocktransaction', id])
 
-      console.log(`Fetching Pending Block Transaction '${ transaction.EthereumTransactionHash }' Receipt`)
+      console.log(`Fetching Pending Block Transaction with Id '${ transaction.Id_ }'`)
 
       return new Promise((resolve, reject) => {
-        web3.eth.getTransactionReceipt(transaction.EthereumTransactionHash, (error, receipt) => {
-          console.log(error, JSON.stringify(receipt))
-
-          if (error) {
-            return reject(error)
-          }
-
-          transaction.EthereumTransactionReceiptBlockHash         = receipt.blockHash
-          transaction.EthereumTransactionReceiptBlockNumber       = receipt.blockNumber
-          transaction.EthereumTransactionReceiptTransactionHash   = receipt.transactionHash
-          transaction.EthereumTransactionReceiptTransactionIndex  = receipt.transactionIndex
-          transaction.EthereumTransactionReceiptFrom              = receipt.from
-          transaction.EthereumTransactionReceiptTo                = receipt.to
-          transaction.EthereumTransactionReceiptCumulativeGasUsed = receipt.cumulativeGasUsed
-          transaction.EthereumTransactionReceiptGasUsed           = receipt.gasUsed
-          transaction.EthereumTransactionReceiptContractAddress   = receipt.contractAddress
+        client.rpc('getrawtransaction', transaction.BitcoinTransactionTxId, true).then((tx) => {
 
           transaction.Confirmations = confirmations
           transaction.UpdatedAt     = moment().toDate()
@@ -305,24 +334,24 @@ function getAndUpdateConfirmedBlockTransaction(web3, datastore, network, number,
             key:  key,
             data: transaction,
           }).then((result)=> {
-            console.log(`Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Saved:\n`, JSON.stringify(result))
+            console.log(`Confirmed Block Transaction with Id ${ id } Saved:\n`, JSON.stringify(result))
 
-            console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
-            return axios.post(bitcoinWebhook, {
-              name:     'blocktransaction.confirmed',
-              type:     network,
-              password: bitcoinWebhookPassword,
+            // console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
+            // return axios.post(bitcoinWebhook, {
+            //   name:     'blocktransaction.confirmed',
+            //   type:     network,
+            //   password: bitcoinWebhookPassword,
 
-              dataId:   transaction.Id_,
-              dataKind: 'blocktransaction',
-              data:     transaction,
-            }).then((result) => {
-              console.log(`Successfully Issued Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
-            }).catch((error) => {
-              console.log(`Error Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event:\n`, error)
-            })
+            //   dataId:   transaction.Id_,
+            //   dataKind: 'blocktransaction',
+            //   data:     transaction,
+            // }).then((result) => {
+            //   console.log(`Successfully Issued Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
+            // }).catch((error) => {
+            //   console.log(`Error Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event:\n`, error)
+            // })
           }).catch((error) =>{
-            console.log(`Error Updating Pending Block Transaction ${ transaction.EthereumTransactionHash }:\n`, error)
+            console.log(`Error Updating Pending Block Transaction with Id ${ id }:\n`, error)
           }))
         })
       })
