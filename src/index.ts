@@ -73,7 +73,7 @@ async function main() {
 
   if (results[0]) {
     // console.log(JSON.stringify(results[0]))
-    lastNumber = results[0].BitcoinBlockHeight
+    currentNumber = results[0].BitcoinBlockHeight
     console.log(`Resuming From Block #${ lastNumber }`)
   } else {
     lastNumber = currentNumber
