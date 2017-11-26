@@ -226,7 +226,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             data.BitcoinTransactionVOutValue = vOut.value;
         }
         console.log(`Saving New Block Transaction with Id '${id}' In Pending Status`);
-        console.log(`Transaction ${JSON.stringify(transaction)}`);
+        // console.log(`Transaction ${ JSON.stringify(transaction) }`)
         // Save the data to the key
         return datastore.save({
             key: datastore.key(['blocktransaction', id]),
@@ -365,13 +365,13 @@ function main() {
         }
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
-        currentNumber = 1231590;
-        lastNumber = 1231600;
+        // currentNumber = 1231590
+        // lastNumber    = 1231600
         var blockNumber = lastNumber;
         function run() {
             return __awaiter(this, void 0, void 0, function* () {
                 // Determine Connectivity by getting the current block number
-                // blockNumber = await client.rpc('getblockcount')
+                blockNumber = yield client.rpc('getblockcount');
                 if (currentNumber instanceof Error) {
                     console.log('Could Not Connected');
                 }
