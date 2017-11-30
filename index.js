@@ -185,7 +185,6 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
         var [results, qInfo] = resultsAndQInfo;
         if (!results || !results[0]) {
             console.log(`Address ${address} Not Found:\n`, qInfo);
-            process.exit();
             return;
         }
         var createdAt = moment().toDate();
@@ -220,12 +219,35 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             data.BitcoinTransactionVInTransactionIndex = vIn.vout;
             data.BitcoinTransactionVInIndex = vIdx;
             data.BitcoinTransactionVInValue = vIn.value;
+            console.log(`Updating a Used Block Transaction ${vIn.txid}`);
+            var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('BitcoinTransactionTxId', '=', vIn.txid);
+            datastore.runQuery(query).then((resultsAndQInfo) => {
+                var [results, qInfo] = resultsAndQInfo;
+                if (!results || !results[0]) {
+                    console.log(`Transaction ${vIn.txid} Not Found:\n`, qInfo);
+                    return;
+                }
+                var transaction = results[0];
+                var id = transaction.Id_;
+                var key = datastore.key(['blocktransaction', id]);
+                transaction.BitcoinTransactionUsed = true;
+                console.log(`Saving Used Block Transaction ${id}`);
+                // console.log(`Transaction: ${ JSON.stringify(transaction) }`)
+                return datastore.save({
+                    key: key,
+                    data: transaction,
+                }).then((result) => {
+                    console.log(`Saved Used Block Transaction ${id}`);
+                }).catch((error) => {
+                    console.log(`Error Saving Used Block Transaction ${id}`);
+                });
+            });
         }
         else if (vOut) {
             data.BitcoinTransactionVOutIndex = vOut.n;
             data.BitcoinTransactionVOutValue = vOut.value;
         }
-        console.log(`Saving New Block Transaction with Id '${id}' In Pending Status`);
+        console.log(`Saving New Block Transaction ${id} In Pending Status`);
         // console.log(`Transaction ${ JSON.stringify(transaction) }`)
         // Save the data to the key
         return datastore.save({
@@ -247,9 +269,8 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             //   console.log(`Error Issuing Pending Block Transaction ${ transaction.hash } Webhook Event:\n`, error)
             // })
         }).catch((error) => {
-            console.log(`Error Saving New Block Transaction ${transaction.txid}`);
+            console.log(`Error Saving New Block Transaction ${id}`);
         });
-        process.exit();
     }).catch((error) => {
         console.log(`Address ${address} Not Found Due to Error:\n`, error);
     });
@@ -269,18 +290,18 @@ function getAndUpdateConfirmedBlockTransaction(client, datastore, network, numbe
         var ps = results.map((transaction) => {
             var id = transaction.Id_;
             var key = datastore.key(['blocktransaction', id]);
-            console.log(`Fetching Pending Block Transaction with Id '${transaction.Id_}'`);
+            console.log(`Fetching Pending Block Transaction ${transaction.Id_}`);
             return new Promise((resolve, reject) => {
                 client.rpc('getrawtransaction', transaction.BitcoinTransactionTxId, true).then((tx) => {
                     transaction.Confirmations = confirmations;
                     transaction.UpdatedAt = moment().toDate();
                     transaction.Status = 'confirmed';
-                    console.log(`Updating Pending Block Transaction with Id '${id}' To Confirmed Status`);
+                    console.log(`Updating Pending Block Transaction ${id} To Confirmed Status`);
                     return resolve(datastore.save({
                         key: key,
                         data: transaction,
                     }).then((result) => {
-                        console.log(`Confirmed Block Transaction with Id ${id} Saved:\n`, JSON.stringify(result));
+                        console.log(`Confirmed Block Transaction ${id} Saved:\n`, JSON.stringify(result));
                         // console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
                         // return axios.post(bitcoinWebhook, {
                         //   name:     'blocktransaction.confirmed',
@@ -295,7 +316,7 @@ function getAndUpdateConfirmedBlockTransaction(client, datastore, network, numbe
                         //   console.log(`Error Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event:\n`, error)
                         // })
                     }).catch((error) => {
-                        console.log(`Error Updating Pending Block Transaction with Id ${id}:\n`, error);
+                        console.log(`Error Updating Pending Block Transaction ${id}:\n`, error);
                     }));
                 });
             });
@@ -356,7 +377,7 @@ function main() {
         var [results, qInfo] = (yield datastore.runQuery(query));
         if (results[0]) {
             // console.log(JSON.stringify(results[0]))
-            lastNumber = currentNumber = results[0].BitcoinBlockHeight - 1;
+            lastNumber = currentNumber = results[0].BitcoinBlockHeight;
             console.log(`Resuming From Block #${currentNumber}`);
         }
         else {
@@ -365,13 +386,13 @@ function main() {
         }
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
-        // currentNumber = 1231590
-        // lastNumber    = 1231600
+        currentNumber = 1231590;
+        lastNumber = 1231600;
         var blockNumber = lastNumber;
         function run() {
             return __awaiter(this, void 0, void 0, function* () {
                 // Determine Connectivity by getting the current block number
-                blockNumber = yield client.rpc('getblockcount');
+                // blockNumber = await client.rpc('getblockcount')
                 if (currentNumber instanceof Error) {
                     console.log('Could Not Connected');
                 }
@@ -404,7 +425,7 @@ function main() {
                             yield updateBloom(bloom, datastore, network);
                             // Iterate through transactions looking for ones we care about
                             for (var tx of block.tx) {
-                                console.log(`Processing Block Transaction ${tx}`);
+                                // console.log(`Processing Block Transaction ${ tx }`)
                                 if (!tx) {
                                     console.log(`It happened! Block:\n${JSON.stringify(block)}\nTransaction:\n${tx}`);
                                     process.exit();

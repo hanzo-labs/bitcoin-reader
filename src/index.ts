@@ -84,13 +84,13 @@ async function main() {
 
   console.log('Start Watching For New Blocks')
 
-  // currentNumber = 1231590
-  // lastNumber    = 1231600
+  currentNumber = 1231590
+  lastNumber    = 1231600
   var blockNumber = lastNumber
 
   async function run() {
     // Determine Connectivity by getting the current block number
-    blockNumber = await client.rpc('getblockcount')
+    // blockNumber = await client.rpc('getblockcount')
 
     if (currentNumber instanceof Error) {
       console.log('Could Not Connected')
@@ -137,7 +137,7 @@ async function main() {
 
         // Iterate through transactions looking for ones we care about
         for(var tx of block.tx) {
-          console.log(`Processing Block Transaction ${ tx }`)
+          // console.log(`Processing Block Transaction ${ tx }`)
 
           if (!tx) {
             console.log(`It happened! Block:\n${ JSON.stringify(block) }\nTransaction:\n${ tx }`)
