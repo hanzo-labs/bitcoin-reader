@@ -159,7 +159,7 @@ function saveReadingBlock(datastore, network, result) {
             key: datastore.key(['block', id]),
             data: data,
         }).then((result) => {
-            console.log(`Reading Block #${data.BitcoinBlockHeight} Saved:\n`, JSON.stringify(result));
+            console.log(`Saved Reading Block #${data.BitcoinBlockHeight}:\n`, JSON.stringify(result));
             // console.log(`Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event`)
             // return axios.post(bitcoinWebhook, {
             //   name:     'block.reading',
@@ -254,7 +254,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             key: datastore.key(['blocktransaction', id]),
             data: data,
         }).then((result) => {
-            // console.log(`Pending Block Transaction ${ transaction.hash } Saved:\n`, JSON.stringify(result))
+            console.log(`Saved Pending Block Transaction ${id}:\n`, JSON.stringify(result));
             // console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
             // return axios.post(bitcoinWebhook, {
             //   name:     'blocktransaction.pending',
@@ -301,7 +301,7 @@ function getAndUpdateConfirmedBlockTransaction(client, datastore, network, numbe
                         key: key,
                         data: transaction,
                     }).then((result) => {
-                        console.log(`Confirmed Block Transaction ${id} Saved:\n`, JSON.stringify(result));
+                        console.log(`Saved Confirmed Block Transaction ${id}:\n`, JSON.stringify(result));
                         // console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
                         // return axios.post(bitcoinWebhook, {
                         //   name:     'blocktransaction.confirmed',
