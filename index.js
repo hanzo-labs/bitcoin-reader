@@ -205,6 +205,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             BitcoinTransactionTime: transaction.time,
             BitcoinTransactionBlockTime: transaction.blocktime,
             BitcoinTransactionType: vIn ? 'vin' : vOut ? 'vout' : 'error',
+            BitcoinTransactionUsed: false,
             Address: address,
             Usage: usage,
             Type: network,
