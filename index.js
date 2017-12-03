@@ -206,6 +206,12 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             BitcoinTransactionBlockTime: transaction.blocktime,
             BitcoinTransactionType: vIn ? 'vin' : vOut ? 'vout' : 'error',
             BitcoinTransactionUsed: false,
+            BitcoinTransactionVInTransactionTxId: '',
+            BitcoinTransactionVInTransactionIndex: 0,
+            BitcoinTransactionVInIndex: 0,
+            BitcoinTransactionVInValue: 0,
+            BitcoinTransactionVOutIndex: 0,
+            BitcoinTransactionVOutValue: 0,
             Address: address,
             Usage: usage,
             Type: network,
@@ -219,7 +225,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
             data.BitcoinTransactionVInTransactionTxId = vIn.txid;
             data.BitcoinTransactionVInTransactionIndex = vIn.vout;
             data.BitcoinTransactionVInIndex = vIdx;
-            data.BitcoinTransactionVInValue = vIn.value;
+            data.BitcoinTransactionVInValue = vIn.value * 1e9;
             console.log(`Updating a Used Block Transaction ${vIn.txid}`);
             var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('BitcoinTransactionTxId', '=', vIn.txid);
             datastore.runQuery(query).then((resultsAndQInfo) => {
@@ -246,7 +252,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
         }
         else if (vOut) {
             data.BitcoinTransactionVOutIndex = vOut.n;
-            data.BitcoinTransactionVOutValue = vOut.value;
+            data.BitcoinTransactionVOutValue = vOut.value * 1e9;
         }
         console.log(`Saving New Block Transaction ${id} In Pending Status`);
         // console.log(`Transaction ${ JSON.stringify(transaction) }`)
@@ -475,7 +481,7 @@ function main() {
                                         var transaction = psResult.transaction;
                                         var vInAddress = previousVOut.scriptPubKey.addresses[0];
                                         // Merge Previous vOut and vIn
-                                        var vIn, value = previousVOut.value;
+                                        vIn.value = previousVOut.value;
                                         if (bloom.test(vInAddress)) {
                                             console.log(`Sender Address ${vInAddress}`);
                                             // Do the actual query and fetch

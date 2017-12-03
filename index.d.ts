@@ -19,7 +19,7 @@ declare class BTCClient {
         (): void;
     }): void;
     _next(): void;
-    rpc(...params: string[]): Promise<{}>;
+    rpc(...params: any[]): Promise<{}>;
 }
 declare function updateBloom(bloom: any, datastore: any, network: any): Promise<void>;
 declare function toDatastoreArray(array: any, type: any): {

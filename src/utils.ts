@@ -54,7 +54,7 @@ class BTCClient {
     }
   }
 
-  rpc(...params: string[]) {
+  rpc(...params: any[]) {
     var method  = params.shift()
     var auth    = new Buffer(this.username + ':' + this.password).toString('base64');
     var id      = getRandomId()
@@ -244,6 +244,14 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
       BitcoinTransactionType:          vIn ? 'vin' : vOut ? 'vout' : 'error',
       BitcoinTransactionUsed:          false,
 
+      BitcoinTransactionVInTransactionTxId:  '',
+      BitcoinTransactionVInTransactionIndex: 0,
+      BitcoinTransactionVInIndex:            0,
+      BitcoinTransactionVInValue:            0,
+
+      BitcoinTransactionVOutIndex: 0,
+      BitcoinTransactionVOutValue: 0,
+
       Address: address,
       Usage:   usage,
       Type:    network,
@@ -260,7 +268,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
       data.BitcoinTransactionVInTransactionTxId  = vIn.txid
       data.BitcoinTransactionVInTransactionIndex = vIn.vout
       data.BitcoinTransactionVInIndex            = vIdx
-      data.BitcoinTransactionVInValue            = vIn.value
+      data.BitcoinTransactionVInValue            = vIn.value * 1e9
 
       console.log(`Updating a Used Block Transaction ${ vIn.txid }`)
       var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('BitcoinTransactionTxId', '=', vIn.txid)
@@ -290,7 +298,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
       })
     } else if (vOut) {
       data.BitcoinTransactionVOutIndex = vOut.n
-      data.BitcoinTransactionVOutValue = vOut.value
+      data.BitcoinTransactionVOutValue = vOut.value * 1e9
     }
 
     console.log(`Saving New Block Transaction ${ id } In Pending Status`)

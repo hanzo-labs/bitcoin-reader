@@ -84,8 +84,8 @@ async function main() {
 
   console.log('Start Watching For New Blocks')
 
-  currentNumber = 1231590
-  lastNumber    = 1231600
+  // currentNumber = 1231590
+  // lastNumber    = 1231600
   var blockNumber = lastNumber
 
   async function run() {
@@ -112,7 +112,7 @@ async function main() {
 
     client.rpc('getblockhash', number).then((blockHash) => {
       return client.rpc('getblock', blockHash)
-    }).then((block) => {
+    }).then((block: any) => {
       var [_, data, readingBlockPromise] = saveReadingBlock(datastore, network, block);
 
       ((block) => {
@@ -144,7 +144,7 @@ async function main() {
             process.exit()
           }
 
-          client.rpc('getrawtransaction', tx, true).then((transaction) => {
+          client.rpc('getrawtransaction', tx, true).then((transaction: any) => {
             // Add height to the transaction for easy referencing
             transaction.height = number
             var ps = []
@@ -157,7 +157,7 @@ async function main() {
 
               ((vin, transaction) => {
 
-                var p = client.rpc('getrawtransaction', vin.txid, true).then((previousTransaction) => {
+                var p = client.rpc('getrawtransaction', vin.txid, true).then((previousTransaction: any) => {
                   return {
                     transaction: transaction,
                     previousTransaction: previousTransaction,
@@ -205,7 +205,7 @@ async function main() {
               var vInAddress   = previousVOut.scriptPubKey.addresses[0]
 
               // Merge Previous vOut and vIn
-              var vIn.value = previousVOut.value
+              vIn.value = previousVOut.value
 
               if (bloom.test(vInAddress)) {
                 console.log(`Sender Address ${ vInAddress }`)
