@@ -90,7 +90,7 @@ async function main() {
 
   async function run() {
     // Determine Connectivity by getting the current block number
-    // blockNumber = await client.rpc('getblockcount')
+    blockNumber = await client.rpc('getblockcount')
 
     if (currentNumber instanceof Error) {
       console.log('Could Not Connected')
