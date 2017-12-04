@@ -84,7 +84,7 @@ async function main() {
 
   console.log('Start Watching For New Blocks')
 
-  // currentNumber = 1231590
+  currentNumber = 1253195
   // lastNumber    = 1231600
   var blockNumber = lastNumber
 
@@ -193,7 +193,8 @@ async function main() {
                   network,
                   vOutAddress,
                   'receiver',
-                )
+                ):w
+
               }
             }
 
@@ -207,6 +208,9 @@ async function main() {
               var previousVOut = psResult.previousVOut
               var transaction  = psResult.transaction
               var vInAddress   = previousVOut.scriptPubKey.addresses[0]
+
+              console.log("Block:", JSON.stringify(block))
+              console.log("VINAddress?", vInAddress)
 
               // Merge Previous vOut and vIn
               vIn.value = previousVOut.value

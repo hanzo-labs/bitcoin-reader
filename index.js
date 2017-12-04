@@ -393,8 +393,8 @@ function main() {
         }
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
-        currentNumber = 1231590;
-        lastNumber = 1231600;
+        currentNumber = 1253195;
+        // lastNumber    = 1231600
         var blockNumber = lastNumber;
         function run() {
             return __awaiter(this, void 0, void 0, function* () {
@@ -403,9 +403,14 @@ function main() {
                 if (currentNumber instanceof Error) {
                     console.log('Could Not Connected');
                 }
-                console.log(`Current Block  #${currentNumber}\nTarget Block #${blockNumber}\n`);
+                if (currentNumber > blockNumber) {
+                    console.log(`Current Block  #${currentNumber - 1}\nTarget Block #${blockNumber}\n`);
+                }
+                else {
+                    console.log(`Current Block  #${currentNumber}\nTarget Block #${blockNumber}\n`);
+                }
                 // Ignore if blocknumber reached
-                if (currentNumber >= blockNumber) {
+                if (currentNumber > blockNumber) {
                     return;
                 }
                 console.log(`\nInflight Requests: ${client.inflight}\n`);
@@ -468,6 +473,7 @@ function main() {
                                             console.log(`Receiver Address ${vOutAddress}`);
                                             // Do the actual query and fetch
                                             savePendingBlockTransaction(datastore, number, transaction, null, vOut, i, network, vOutAddress, 'receiver');
+                                            w;
                                         }
                                     }
                                     return Promise.all(ps);
@@ -480,6 +486,7 @@ function main() {
                                         var previousVOut = psResult.previousVOut;
                                         var transaction = psResult.transaction;
                                         var vInAddress = previousVOut.scriptPubKey.addresses[0];
+                                        console.log("VINAddress?", vInAddress);
                                         // Merge Previous vOut and vIn
                                         vIn.value = previousVOut.value;
                                         if (bloom.test(vInAddress)) {
