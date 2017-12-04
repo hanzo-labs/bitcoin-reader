@@ -194,8 +194,7 @@ async function main() {
                   network,
                   vOutAddress,
                   'receiver',
-                ):w
-
+                )
               }
             }
 
