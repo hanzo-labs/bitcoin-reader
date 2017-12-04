@@ -394,7 +394,7 @@ function main() {
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
         // Use these to manually set start and end blocks
-        // currentNumber = 1253195
+        currentNumber = 1253195;
         // lastNumber    = 1231600
         var blockNumber = lastNumber;
         function run() {
