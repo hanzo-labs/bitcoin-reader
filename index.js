@@ -393,7 +393,8 @@ function main() {
         }
         console.log('Additional Query Info:\n', JSON.stringify(qInfo));
         console.log('Start Watching For New Blocks');
-        currentNumber = 1253195;
+        // Use these to manually set start and end blocks
+        // currentNumber = 1253195
         // lastNumber    = 1231600
         var blockNumber = lastNumber;
         function run() {
@@ -454,9 +455,9 @@ function main() {
                                             continue;
                                         }
                                         ((vin, transaction) => {
-                                            console.log("TX", transaction.txid);
+                                            // console.log("TX", transaction.txid)
                                             var p = client.rpc('getrawtransaction', vin.txid, true).then((previousTransaction) => {
-                                                console.log("FOUND TX", transaction.txid);
+                                                // console.log("FOUND TX", transaction.txid)
                                                 return {
                                                     transaction: transaction,
                                                     previousTransaction: previousTransaction,
@@ -464,7 +465,7 @@ function main() {
                                                     vIn: vin,
                                                 };
                                             }).catch((error) => {
-                                                console.log(`Error Getting Block Transaction '${transaction.txid}`, err);
+                                                console.log(`Error Getting Block Transaction '${transaction.txid}:`, error);
                                             });
                                             ps.push(p);
                                         })(vin, transaction);
@@ -474,7 +475,7 @@ function main() {
                                     for (var i in transaction.vout) {
                                         var vOut = transaction.vout[i];
                                         if (!vOut.scriptPubKey.addresses) {
-                                            console.log("Not Address for VOut: ", vOut);
+                                            console.log("No Address for VOut: ", vOut);
                                             continue;
                                         }
                                         var vOutAddress = vOut.scriptPubKey.addresses[0];
@@ -493,17 +494,21 @@ function main() {
                                         var vIn = psResult.vIn;
                                         var previousVOut = psResult.previousVOut;
                                         var transaction = psResult.transaction;
-                                        var vInAddress = previousVOut.scriptPubKey.addresses[0];
-                                        console.log("VIN Check", transaction.txid);
-                                        if (transaction.txid == "24c5d694e0f66eb7b3f5b9e3bbc90a3488e5367156b29c858fa3aff1f877caa3") {
-                                            console.log("VIN Block Hash", transaction.height);
-                                            console.log("VIN Block Transaction", transaction.txid);
-                                            console.log("VIN Previous Block Hash", psResult.previousTransaction.txid);
-                                            console.log("VIN Previous VOut", previousVOut);
-                                            console.log("VIN Transaction", transaction);
-                                            console.log("VIN", vIn);
-                                            console.log("VINAddress?", vInAddress);
+                                        if (!previousVOut.scriptPubKey.addresses) {
+                                            console.log("No Address for VIn: ", vIn);
+                                            continue;
                                         }
+                                        var vInAddress = previousVOut.scriptPubKey.addresses[0];
+                                        // console.log("VIN Check", transaction.txid)
+                                        // if (transaction.txid == "24c5d694e0f66eb7b3f5b9e3bbc90a3488e5367156b29c858fa3aff1f877caa3") {
+                                        //   console.log("VIN Block Hash", transaction.height)
+                                        //   console.log("VIN Block Transaction", transaction.txid)
+                                        //   console.log("VIN Previous Block Hash", psResult.previousTransaction.txid)
+                                        //   console.log("VIN Previous VOut", previousVOut)
+                                        //   console.log("VIN Transaction", transaction)
+                                        //   console.log("VIN", vIn)
+                                        //   console.log("VINAddress?", vInAddress)
+                                        // }
                                         // Merge Previous vOut and vIn
                                         vIn.value = previousVOut.value;
                                         if (bloom.test(vInAddress)) {

@@ -84,6 +84,7 @@ async function main() {
 
   console.log('Start Watching For New Blocks')
 
+  // Use these to manually set start and end blocks
   // currentNumber = 1253195
   // lastNumber    = 1231600
   var blockNumber = lastNumber
@@ -171,7 +172,7 @@ async function main() {
                     vIn: vin,
                   }
                 }).catch((error) => {
-                  console.log(`Error Getting Block Transaction '${ transaction.txid}`, err)
+                  console.log(`Error Getting Block Transaction '${ transaction.txid}:`, error)
                 })
                 ps.push(p)
               })(vin, transaction);
