@@ -156,6 +156,7 @@ async function main() {
               var vin = transaction.vin[i];
               // Skip coinbase transactions
               if (!vin.txid) {
+                console.log("Skipping Block Transaction", transaction.hash)
                 continue
               }
 
@@ -202,7 +203,6 @@ async function main() {
           }).then((...psResults) => {
             // Loop through vIns to determine if there are transactions
             // sent
-            console.log(`VIn Checks for #${ block.height }`)
             for (var i in psResults) {
               var psResult     = psResults[i][0]
               var vIn          = psResult.vIn
@@ -210,6 +210,7 @@ async function main() {
               var transaction  = psResult.transaction
               var vInAddress   = previousVOut.scriptPubKey.addresses[0]
 
+              console.log("VIN Block Transaction", transaction.hash)
               console.log("VINAddress?", vInAddress)
 
               // Merge Previous vOut and vIn
