@@ -182,7 +182,7 @@ async function main() {
             for (var i in transaction.vout) {
               var vOut        = transaction.vout[i]
               if (!vOut.scriptPubKey.addresses) {
-                console.log("Not Address for VOut: ", vOut)
+                console.log("No Address for VOut: ", vOut)
                 continue
               }
 
@@ -215,6 +215,10 @@ async function main() {
               var vIn          = psResult.vIn
               var previousVOut = psResult.previousVOut
               var transaction  = psResult.transaction
+              if (!previousVOut.scriptPubKey.addresses) {
+                console.log("No Address for VIn: ", vIn)
+                continue
+              }
               var vInAddress   = previousVOut.scriptPubKey.addresses[0]
 
               // console.log("VIN Check", transaction.txid)
