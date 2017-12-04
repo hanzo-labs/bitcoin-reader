@@ -96,10 +96,14 @@ async function main() {
       console.log('Could Not Connected')
     }
 
-    console.log(`Current Block  #${ currentNumber }\nTarget Block #${ blockNumber }\n`)
+    if (currentNumber > blockNumber) {
+      console.log(`Current Block  #${ currentNumber-1 }\nTarget Block #${ blockNumber }\n`)
+    } else {
+      console.log(`Current Block  #${ currentNumber }\nTarget Block #${ blockNumber }\n`)
+    }
 
     // Ignore if blocknumber reached
-    if (currentNumber >= blockNumber) {
+    if (currentNumber > blockNumber) {
       return
     }
 

@@ -399,7 +399,7 @@ function main() {
         function run() {
             return __awaiter(this, void 0, void 0, function* () {
                 // Determine Connectivity by getting the current block number
-                // blockNumber = await client.rpc('getblockcount')
+                blockNumber = yield client.rpc('getblockcount');
                 if (currentNumber instanceof Error) {
                     console.log('Could Not Connected');
                 }
