@@ -450,17 +450,21 @@ function main() {
                                         var vin = transaction.vin[i];
                                         // Skip coinbase transactions
                                         if (!vin.txid) {
-                                            console.log("Skipping Block Transaction", transaction.hash);
+                                            console.log("Skipping Block Transaction", transaction.txid);
                                             continue;
                                         }
                                         ((vin, transaction) => {
+                                            console.log("TX", transaction.txid);
                                             var p = client.rpc('getrawtransaction', vin.txid, true).then((previousTransaction) => {
+                                                console.log("FOUND TX", transaction.txid);
                                                 return {
                                                     transaction: transaction,
                                                     previousTransaction: previousTransaction,
                                                     previousVOut: previousTransaction.vout[vin.vout],
                                                     vIn: vin,
                                                 };
+                                            }).catch((error) => {
+                                                console.log(`Error Getting Block Transaction '${transaction.txid}`, err);
                                             });
                                             ps.push(p);
                                         })(vin, transaction);
@@ -469,27 +473,37 @@ function main() {
                                     // received
                                     for (var i in transaction.vout) {
                                         var vOut = transaction.vout[i];
+                                        if (!vOut.scriptPubKey.addresses) {
+                                            console.log("Not Address for VOut: ", vOut);
+                                            continue;
+                                        }
                                         var vOutAddress = vOut.scriptPubKey.addresses[0];
                                         if (bloom.test(vOutAddress)) {
                                             console.log(`Receiver Address ${vOutAddress}`);
                                             // Do the actual query and fetch
                                             savePendingBlockTransaction(datastore, number, transaction, null, vOut, i, network, vOutAddress, 'receiver');
-                                            w;
                                         }
                                     }
                                     return Promise.all(ps);
                                 }).then((...psResults) => {
                                     // Loop through vIns to determine if there are transactions
                                     // sent
-                                    console.log("VIN Block #", transaction.height);
                                     for (var i in psResults) {
                                         var psResult = psResults[i][0];
                                         var vIn = psResult.vIn;
                                         var previousVOut = psResult.previousVOut;
                                         var transaction = psResult.transaction;
                                         var vInAddress = previousVOut.scriptPubKey.addresses[0];
-                                        console.log("VIN Block Transaction", transaction.hash);
-                                        console.log("VINAddress?", vInAddress);
+                                        console.log("VIN Check", transaction.txid);
+                                        if (transaction.txid == "24c5d694e0f66eb7b3f5b9e3bbc90a3488e5367156b29c858fa3aff1f877caa3") {
+                                            console.log("VIN Block Hash", transaction.height);
+                                            console.log("VIN Block Transaction", transaction.txid);
+                                            console.log("VIN Previous Block Hash", psResult.previousTransaction.txid);
+                                            console.log("VIN Previous VOut", previousVOut);
+                                            console.log("VIN Transaction", transaction);
+                                            console.log("VIN", vIn);
+                                            console.log("VINAddress?", vInAddress);
+                                        }
                                         // Merge Previous vOut and vIn
                                         vIn.value = previousVOut.value;
                                         if (bloom.test(vInAddress)) {
@@ -499,7 +513,7 @@ function main() {
                                         }
                                     }
                                 }).catch((error) => {
-                                    // console.log(`Error Fetching Previous Block Transaction for vIn:\n`, error)
+                                    console.log(`Error Fetching Previous Block Transaction for vIn:\n`, error);
                                 });
                             }
                         });
