@@ -213,7 +213,7 @@ async function main() {
             // sent
 	        for (var i in psResults) {
               var psResult     = psResults[i][0]
-              if (psResult) {
+              if (!psResult) {
                 console.log("No Result for VIn: ", psResults[i])
                 continue
               }
