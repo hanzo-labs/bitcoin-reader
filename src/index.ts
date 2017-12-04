@@ -203,6 +203,7 @@ async function main() {
           }).then((...psResults) => {
             // Loop through vIns to determine if there are transactions
             // sent
+            console.log("VIN Block #", tx.height)
             for (var i in psResults) {
               var psResult     = psResults[i][0]
               var vIn          = psResult.vIn
