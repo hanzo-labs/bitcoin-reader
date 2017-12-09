@@ -85,8 +85,9 @@ async function main() {
   console.log('Start Watching For New Blocks')
 
   // Use these to manually set start and end blocks
-  // currentNumber = 1253195
+  currentNumber = 1253423
   // lastNumber    = 1231600
+  lastNumber = 1253433
   var blockNumber = lastNumber
 
   async function run() {
@@ -199,7 +200,7 @@ async function main() {
                   transaction,
                   null,
                   vOut,
-                  i,
+                  parseInt(i, 10),
                   network,
                   vOutAddress,
                   'receiver',
@@ -250,7 +251,7 @@ async function main() {
                   transaction,
                   vIn,
                   null,
-                  i,
+                  parseInt(i, 10),
                   network,
                   vInAddress,
                   'sender',

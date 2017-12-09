@@ -14,7 +14,7 @@ var blockAddressQueriedAt = null
 
 // Hanzo Ethereum Webhook
 var bitcoinWebhook = 'https://api.hanzo.io/bitcoin/webhook'
-var bitcoinWebhookPassword = '3NRD2H3EbnrX4fFPBvHqUxsQjMMdVpbGXRn2jFggnq66bEEczjF3GK4r66JX3veY6WJUrxCSpB2AKsNRBHuDTHZkXBrY258tCpa4xMJPnyrCh5dZaPD5TvCC8BSHgEeMwkaN6Vgcme783fFBeS9eY88NpAgH84XbLL5W5AXahLa2ZSJy4VT8nkRVpSNPE32KGE4Jp3uhuHPUd7eKdYjrX9x8aukgQKtuyCNKdxhh4jw8ZzYZ2JUbgMmTtjduFswc'
+var bitcoinWebhookPassword = 'mhjgDecUQjAzfLtkvX4FHeczt5bg6TwpFtMt4Z4geTUHdcwHMqArPtxjFepnNWqs7BqaeDEkBH7A3HSGPnPkL4WbnpWMDSAnFeG7zELbu8KKBwy3EPx7RgnpZVV6PJFUgHHUXW2yE9jRmDsnGxsXB8KaQyBjAccK5UGtCHeWs99akNufy2kZ2aTQaQfHRBTJXHDG7eywTzbWwcxA6D4Hr737GmWED6bg2jReW8kbNX8n2DJ97DBrPvM65YCSSkLg'
 
 // Get random id
 function getRandomId() {
@@ -189,20 +189,20 @@ function saveReadingBlock(datastore, network, result) {
   }).then((result) => {
     console.log(`Saved Reading Block #${ data.BitcoinBlockHeight }:\n`, JSON.stringify(result))
 
-    // console.log(`Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event`)
-    // return axios.post(bitcoinWebhook, {
-    //   name:     'block.reading',
-    //   type:     network,
-    //   password: bitcoinWebhookPassword,
+    console.log(`Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event`)
+    return axios.post(bitcoinWebhook, {
+      name:     'block.reading',
+      type:     network,
+      password: bitcoinWebhookPassword,
 
-    //   dataId:   data.Id_,
-    //   dataKind: 'block',
-    //   data:     data,
-    // }).then((result) => {
-    //   console.log(`Successfully Issued New Block #${ data.BitcoinBlockHeight } Webhook Event`)
-    // }).catch((error) => {
-    //   console.log(`Error Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event:\n`, error)
-    // })
+      dataId:   data.Id_,
+      dataKind: 'block',
+      data:     data,
+    }).then((result) => {
+      console.log(`Successfully Issued New Block #${ data.BitcoinBlockHeight } Webhook Event`)
+    }).catch((error) => {
+      console.log(`Error Issuing New Block #${ data.BitcoinBlockHeight } Webhook Event:\n`, error)
+    })
   }).catch((error) => {
     console.log(`Error Saving New Block #${ data.BitcoinBlockHeight }:\n`, error)
   })]
@@ -271,7 +271,7 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
       data.BitcoinTransactionVInValue            = vIn.value * 1e9
 
       console.log(`Updating a Used Block Transaction ${ vIn.txid }`)
-      var query = datastore.createQuery('blocktransaction').filter('Type', '=', network).filter('BitcoinTransactionTxId', '=', vIn.txid)
+      var query = datastore.createQuery('blocktransaction').filter('BitcoinTransactionTxId', '=', vIn.txid).filter('BitcoinTransactionVOutIndex', '=', vIn.vout)
       datastore.runQuery(query).then((resultsAndQInfo) => {
         var [results, qInfo] = resultsAndQInfo
         if (!results || !results[0]) {
@@ -311,20 +311,20 @@ function savePendingBlockTransaction(datastore, blockHeight, transaction, vIn, v
     }).then((result)=> {
       console.log(`Saved Pending Block Transaction ${ id }:\n`, JSON.stringify(result))
 
-      // console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
-      // return axios.post(bitcoinWebhook, {
-      //   name:     'blocktransaction.pending',
-      //   type:     network,
-      //   password: bitcoinWebhookPassword,
+      console.log(`Issuing Pending Block Transaction ${ transaction.hash } Webhook Event`)
+      return axios.post(bitcoinWebhook, {
+        name:     'blocktransaction.pending',
+        type:     network,
+        password: bitcoinWebhookPassword,
 
-      //   dataId:   data.Id_,
-      //   dataKind: 'blocktransaction',
-      //   data:     data,
-      // }).then((result) => {
-      //   console.log(`Successfully Issued Pending Block Transaction ${ transaction.hash } Webhook Event`)
-      // }).catch((error) => {
-      //   console.log(`Error Issuing Pending Block Transaction ${ transaction.hash } Webhook Event:\n`, error)
-      // })
+        dataId:   data.Id_,
+        dataKind: 'blocktransaction',
+        data:     data,
+      }).then((result) => {
+        console.log(`Successfully Issued Pending Block Transaction ${ transaction.hash } Webhook Event`)
+      }).catch((error) => {
+        console.log(`Error Issuing Pending Block Transaction ${ transaction.hash } Webhook Event:\n`, error)
+      })
     }).catch((error) =>{
       console.log(`Error Saving New Block Transaction ${ id }`)
     })
@@ -370,20 +370,20 @@ function getAndUpdateConfirmedBlockTransaction(client, datastore, network, numbe
           }).then((result)=> {
             console.log(`Saved Confirmed Block Transaction ${ id }:\n`, JSON.stringify(result))
 
-            // console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
-            // return axios.post(bitcoinWebhook, {
-            //   name:     'blocktransaction.confirmed',
-            //   type:     network,
-            //   password: bitcoinWebhookPassword,
+            console.log(`Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
+            return axios.post(bitcoinWebhook, {
+              name:     'blocktransaction.confirmed',
+              type:     network,
+              password: bitcoinWebhookPassword,
 
-            //   dataId:   transaction.Id_,
-            //   dataKind: 'blocktransaction',
-            //   data:     transaction,
-            // }).then((result) => {
-            //   console.log(`Successfully Issued Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
-            // }).catch((error) => {
-            //   console.log(`Error Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event:\n`, error)
-            // })
+              dataId:   transaction.Id_,
+              dataKind: 'blocktransaction',
+              data:     transaction,
+            }).then((result) => {
+              console.log(`Successfully Issued Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event`)
+            }).catch((error) => {
+              console.log(`Error Issuing Confirmed Block Transaction ${ transaction.EthereumTransactionHash } Webhook Event:\n`, error)
+            })
           }).catch((error) =>{
             console.log(`Error Updating Pending Block Transaction ${ id }:\n`, error)
           }))
